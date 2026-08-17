@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Call Log</title>
+<style>
+  :root {
+    --bg: #F6F7F3;
+    --surface: #FFFFFF;
+    --surface-2: #EEF1EA;
+    --border: #DCE2D9;
+    --text: #16201A;
+    --text-muted: #56635A;
+    --accent: #0E9C63;
+    --accent-soft: #E3F5EA;
+    --amber: #A96A00;
+    --amber-soft: #FBEED9;
+    --coral: #C63C4B;
+    --coral-soft: #FBE3E5;
+    --shadow: 0 1px 2px rgba(20,30,24,0.06), 0 8px 24px -12px rgba(20,30,24,0.12);
+
+    --font-body: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+                 "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0B0F0C;
+      --surface: #121713;
+      --surface-2: #1A211C;
+      --border: #263329;
+      --text: #ECEFE9;
+      --text-muted: #93A398;
+      --accent: #35D68C;
+      --accent-soft: rgba(53,214,140,0.14);
+      --amber: #F2B84B;
+      --amber-soft: rgba(242,184,75,0.14);
+      --coral: #FF7A87;
+      --coral-soft: rgba(255,122,135,0.14);
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 28px -14px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B0F0C;
+    --surface: #121713;
+    --surface-2: #1A211C;
+    --border: #263329;
+    --text: #ECEFE9;
+    --text-muted: #93A398;
+    --accent: #35D68C;
+    --accent-soft: rgba(53,214,140,0.14);
+    --amber: #F2B84B;
+    --amber-soft: rgba(242,184,75,0.14);
+    --coral: #FF7A87;
+    --coral-soft: rgba(255,122,135,0.14);
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 28px -14px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent); text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  a:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  h1, h2, h3 { text-wrap: balance; font-weight: 700; margin: 0; }
+
+  /* ---------- Header ---------- */
+  .masthead {
+    padding: 3.2rem 1.5rem 2.2rem;
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(700px 280px at 12% -10%, var(--accent-soft), transparent 60%),
+      var(--bg);
+  }
+  .masthead-inner { max-width: 1080px; margin: 0 auto; }
+  .masthead .eyebrow { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
+  .masthead .eyebrow .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .masthead h1 {
+    font-size: clamp(2.1rem, 5vw, 3.1rem);
+    letter-spacing: -0.01em;
+  }
+  .masthead p.tagline {
+    margin: 0.9rem 0 0;
+    max-width: 60ch;
+    color: var(--text-muted);
+    font-size: 1.05rem;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.6rem;
+  }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .chip.accent { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); background: var(--accent-soft); }
+
+  /* ---------- Layout ---------- */
+  .layout {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 2.4rem 1.5rem 6rem;
+    display: grid;
+    grid-template-columns: 210px minmax(0,1fr);
+    gap: 3rem;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  nav.toc {
+    position: sticky;
+    top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    padding-right: 0.5rem;
+  }
+  @media (max-width: 860px) {
+    nav.toc {
+      position: static;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: visible;
+      gap: 0.4rem;
+      padding-bottom: 0.6rem;
+      border-bottom: 1px solid var(--border);
+      max-height: none;
+    }
+  }
+  nav.toc a {
+    font-size: 0.86rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 0.4rem 0.6rem;
+    border-radius: 8px;
+    border-left: 2px solid transparent;
+    white-space: nowrap;
+  }
+  nav.toc a:hover { color: var(--text); background: var(--surface-2); }
+  nav.toc a.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-soft); }
+  @media (max-width: 860px) {
+    nav.toc a.active { border-left-color: transparent; border-bottom: 2px solid var(--accent); border-radius: 8px 8px 0 0; }
+  }
+
+  main { min-width: 0; display: flex; flex-direction: column; gap: 3.2rem; }
+
+  section { scroll-margin-top: 1.5rem; }
+  section > .eyebrow { margin-bottom: 0.5rem; }
+  section > h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1.1rem;
+    letter-spacing: -0.01em;
+  }
+  section > p.lede { color: var(--text-muted); margin: -0.4rem 0 1.2rem; max-width: 68ch; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.3rem 1.4rem;
+    box-shadow: var(--shadow);
+  }
+
+  ul.plain, ol.plain { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  ul.plain { list-style: disc; }
+  ol.plain { list-style: decimal; }
+  ul.plain li, ol.plain li { padding-left: 0.2rem; }
+
+  /* ---------- Callouts (decision / open-question / note) ---------- */
+  .callout-stack { display: flex; flex-direction: column; gap: 0.7rem; }
+  .callout {
+    border-left: 3px solid var(--border);
+    background: var(--surface);
+    border-radius: 0 10px 10px 0;
+    padding: 0.75rem 1rem;
+    display: flex;
+    gap: 0.7rem;
+    align-items: baseline;
+  }
+  .callout .tag {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    flex: none;
+    padding-top: 0.15rem;
+  }
+  .callout .body { color: var(--text); }
+  .callout .body strong { color: var(--text); }
+  .callout.decision { border-left-color: var(--accent); }
+  .callout.decision .tag { color: var(--accent); }
+  .callout.question { border-left-color: var(--amber); }
+  .callout.question .tag { color: var(--amber); }
+  .callout.note { border-left-color: var(--text-muted); }
+  .callout.note .tag { color: var(--text-muted); }
+
+  /* ---------- Legend ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 1.1rem; margin-bottom: 1.4rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; color: var(--text-muted); }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* ---------- Stat row ---------- */
+  .stat-row { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 1.2rem; }
+  .stat {
+    background: var(--surface-2);
+    border-radius: 10px;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.82rem;
+  }
+  .stat .k { color: var(--text-muted); display: block; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.15rem; }
+  .stat .v { font-weight: 600; }
+
+  /* ---------- Pull quote ---------- */
+  blockquote {
+    margin: 0 0 1.4rem;
+    padding: 1.1rem 1.3rem;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 10px 10px 0;
+    font-size: 1.08rem;
+    color: var(--text);
+  }
+  blockquote span.cite { display: block; margin-top: 0.5rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); text-transform: none; }
+
+  /* ---------- Table ---------- */
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--border); }
+  th { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+
+  /* ---------- Two-column pros/cons ---------- */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 640px) { .split { grid-template-columns: 1fr; } }
+  .split .card h3 { font-size: 0.95rem; margin-bottom: 0.6rem; }
+  .split .card.good { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+  .split .card.bad { border-color: color-mix(in srgb, var(--amber) 35%, var(--border)); }
+
+  /* ---------- Architecture stack ---------- */
+  .stack { display: flex; flex-direction: column; gap: 0.55rem; }
+  .stack-item {
+    display: grid;
+    grid-template-columns: 108px 1fr;
+    gap: 0.9rem;
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+  }
+  @media (max-width: 560px) { .stack-item { grid-template-columns: 1fr; gap: 0.3rem; } }
+  .stack-item .label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.03em;
+  }
+
+  /* ---------- Screen cards ---------- */
+  .screen-grid { display: flex; flex-direction: column; gap: 0.9rem; }
+  .screen-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.1rem 1.3rem;
+    box-shadow: var(--shadow);
+  }
+  .screen-card .head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    margin-bottom: 0.55rem;
+    flex-wrap: wrap;
+  }
+  .screen-card .count {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+  .screen-card h3 { font-size: 1.02rem; }
+  .screen-card ul { margin: 0; padding-left: 1.15rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.94rem; }
+  .screen-card mark {
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 0.02em 0.3em;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  /* ---------- Stepper (build order) ---------- */
+  .stepper { display: flex; flex-direction: column; }
+  .step { display: grid; grid-template-columns: 32px 1fr; gap: 1rem; }
+  .step .rail { display: flex; flex-direction: column; align-items: center; }
+  .step .node {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--surface-2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 0.76rem; font-weight: 700; color: var(--text-muted);
+    flex: none;
+  }
+  .step:first-child .node { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .step .line { flex: 1; width: 1px; background: var(--border); margin: 0.15rem 0; }
+  .step:last-child .line { display: none; }
+  .step .content { padding-bottom: 1.5rem; }
+  .step .content h3 { font-size: 0.98rem; margin-bottom: 0.2rem; }
+  .step .content p { margin: 0; color: var(--text-muted); font-size: 0.92rem; }
+
+  /* ---------- Timeline (chat log) ---------- */
+  .timeline { display: flex; flex-direction: column; gap: 1.4rem; }
+  .timeline-entry .date {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+    display: block;
+  }
+
+  footer {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 3rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="eyebrow"><span class="dot"></span>PROJECT NOTES · CALL LOG</div>
+    <h1>phone_english</h1>
+    <p class="tagline">헤이링(HeyRing)을 레퍼런스로 삼은 AI 전화영어 클론 프로젝트 — 대화를 통해 기획을 구체화하며 쌓아가는 기록. 코드를 작성할 때 이 문서를 항상 먼저 참고한다.</p>
+    <div class="meta-row">
+      <span class="chip accent">단계: UI/UX 설계</span>
+      <span class="chip">레퍼런스: 헤이링(HeyRing)</span>
+      <span class="chip">스택: Next.js · TypeScript · Gemini · Web Speech API</span>
+      <span class="chip">최종 업데이트: 2026-08-17</span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" aria-label="목차">
+    <a href="#status">상태</a>
+    <a href="#log">대화 로그</a>
+    <a href="#research">레퍼런스 리서치</a>
+    <a href="#decisions">결정 사항</a>
+    <a href="#mvp">MVP 범위</a>
+    <a href="#architecture">아키텍처</a>
+    <a href="#open-1">열린 질문</a>
+    <a href="#uiux">UI/UX 분석</a>
+    <a href="#decisions-2">2차 결정 사항</a>
+    <a href="#target-screens">빌드 대상 화면</a>
+    <a href="#build-order">빌드 순서</a>
+    <a href="#implementation">구현 현황</a>
+    <a href="#progress">진행 메모</a>
+    <a href="#requirements">요구사항</a>
+  </nav>
+
+  <main>
+
+    <section id="status">
+      <div class="eyebrow">01 · Status</div>
+      <h2>상태</h2>
+      <div class="stat-row">
+        <div class="stat"><span class="k">Repo</span><span class="v">README.md만 존재하는 초기 상태</span></div>
+        <div class="stat"><span class="k">프로젝트명</span><span class="v">phone_english (전화 영어)</span></div>
+        <div class="stat"><span class="k">목표</span><span class="v">헤이링 UI/UX를 최대한 동일하게 클론</span></div>
+      </div>
+    </section>
+
+    <section id="log">
+      <div class="eyebrow">02 · Conversation</div>
+      <h2>대화 로그</h2>
+      <div class="timeline">
+        <div class="timeline-entry card">
+          <span class="date">2026-08-17</span>
+          <ul class="plain">
+            <li>사용자가 대화를 통해 프로젝트를 구체화하고 싶다고 요청 — 대화 내용을 md 파일로 정리해 항상 참고하기로 함.</li>
+            <li>1차 질문(서비스 성격/타깃/우선순위)에서 "그 외" / "개인 프로젝트·학습용" / "핵심 기능부터"로 답변, 구체적 설명은 후속 대화에서 확인.</li>
+            <li>사용자가 방향 제시: <strong>"헤이링"이라는 앱을 조사하고, 이 앱을 완벽히 카피하는 것이 목표</strong>라고 명확히 함.</li>
+            <li>헤이링 앱 텍스트 리서치 수행 → 이후 사용자가 실제 앱 스크린샷 19장을 직접 캡처해 제공, UI/UX 분석을 대폭 보강.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="research">
+      <div class="eyebrow">03 · Reference Research</div>
+      <h2>레퍼런스 리서치 — 헤이링 (HeyRing)</h2>
+
+      <div class="stat-row">
+        <div class="stat"><span class="k">개발사</span><span class="v">하이퍼노바 (HYPERNOVA)</span></div>
+        <div class="stat"><span class="k">평점</span><span class="v">4.7 / 5.0 (2,200+)</span></div>
+        <div class="stat"><span class="k">차트</span><span class="v">교육 카테고리 13위</span></div>
+        <div class="stat"><span class="k">공식 사이트</span><span class="v"><a href="https://heyring.app/" target="_blank" rel="noopener">heyring.app</a></span></div>
+      </div>
+      <p class="lede">3개월 만에 매출 1억 원 달성, 교육 앱 전체 6위 기록했다는 보도 있음. iOS(<a href="https://apps.apple.com/kr/app/id6511246156" target="_blank" rel="noopener">App Store</a>) / <a href="https://play.google.com/store/apps/details?id=com.hypernovacorp.navatar_android&hl=en_GB" target="_blank" rel="noopener">Android</a> 모두 출시.</p>
+
+      <blockquote>
+        내가 전화 거는 게 아니라, AI가 먼저 전화를 건다.
+        <span class="cite">— 능동적으로 앱을 켜야 하는 부담을 없애고, 정해진 시간에 AI 원어민 친구가 전화를 걸어와 받기만 하면 영어 회화 연습이 시작되는 구조</span>
+      </blockquote>
+
+      <h3 style="font-size:1.02rem; margin-bottom:0.6rem;">핵심 기능</h3>
+      <ol class="plain" style="margin-bottom:1.6rem;">
+        <li><strong>선(先)전화 시스템</strong> — 사용자가 설정한 시간에 AI가 먼저 전화 (최대 3회까지 재시도). 안 받으면 계속 찾아옴.</li>
+        <li><strong>맞춤형 AI 원어민 친구</strong> — 관심사·성격·취미를 반영한 페르소나. 이전 대화를 기억해 친구처럼 이어감.</li>
+        <li><strong>실시간 보조</strong> — 막히면 한국어로 물어볼 수 있고, 힌트/질문하기로 다음 문장을 이어감.</li>
+        <li><strong>리스닝 보조</strong> — AI 답변이 영어+한국어 동시 표시.</li>
+        <li><strong>실시간 패러프레이징</strong> — 발화를 더 자연스러운 원어민 표현으로 즉시 교정 + 이유 설명.</li>
+        <li><strong>통화 후 리포트</strong> — 발음/운율/유창성 분석, 그래프로 진도 시각화.</li>
+        <li><strong>통화 시간</strong> — 기본 10분, 무제한 연장 가능.</li>
+      </ol>
+
+      <h3 style="font-size:1.02rem; margin-bottom:0.6rem;">사용 흐름</h3>
+      <ol class="plain" style="margin-bottom:1.6rem;">
+        <li>앱 설치 및 가입</li>
+        <li>온보딩에서 관심사/성격/희망 통화 시간 설정</li>
+        <li>설정 시간에 AI가 전화 (최대 3회 재시도)</li>
+        <li>전화 수신 → 대화 시작 (영한 자막, 힌트/질문, 실시간 교정)</li>
+        <li>통화 종료 → 자동 리포트 생성</li>
+        <li>리포트 복습</li>
+      </ol>
+
+      <h3 style="font-size:1.02rem; margin-bottom:0.6rem;">요금제</h3>
+      <div class="table-wrap card" style="margin-bottom:1.6rem;">
+        <table>
+          <thead><tr><th>플랜</th><th>내용</th></tr></thead>
+          <tbody>
+            <tr><td>무료</td><td>주 2회, 각 5분</td></tr>
+            <tr><td>프리미엄 월간</td><td class="num">₩29,000 — 매일 무제한 + 부가기능</td></tr>
+            <tr><td>프리미엄 연간</td><td class="num">₩129,000 — 월 환산 약 72% 할인</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="split" style="margin-bottom:1.6rem;">
+        <div class="card good">
+          <h3 style="color:var(--accent);">사용자가 꼽은 장점</h3>
+          <ul class="plain">
+            <li>강제로 걸려오는 전화가 오히려 루틴 형성에 도움</li>
+            <li>AI 상대라 압박감이 적음</li>
+            <li>상세한 피드백 — "스픽보다 낫다"는 비교 후기</li>
+          </ul>
+        </div>
+        <div class="card bad">
+          <h3 style="color:var(--amber);">불만 / 요청 사항</h3>
+          <ul class="plain">
+            <li>모바일 전용, PC 이용 불가</li>
+            <li>영어 스크립트 숨기기 옵션 요청</li>
+            <li>화면 안 보고 듣기만 하는 UI 요청</li>
+            <li>무료 플랜 제약이 커서 사실상 유료 필수</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 style="font-size:1.02rem; margin-bottom:0.6rem;">카피 시 구현 필요 요소 (추정)</h3>
+      <ul class="plain">
+        <li>예약 시간 전화 걸기 — PSTN(Twilio 등) or 인앱 콜 UI 시뮬레이션</li>
+        <li>실시간 음성 대화 — STT → LLM → TTS, 낮은 지연 필요</li>
+        <li>페르소나/메모리 시스템 — 캐릭터 설정 + 장기 기억</li>
+        <li>실시간 영한 동시 자막</li>
+        <li>실시간 교정(패러프레이징) 엔진</li>
+        <li>통화 녹음/전사 저장 → 리포트 후처리</li>
+        <li>스케줄러/알림 — 전화 트리거, 재시도 로직</li>
+        <li>구독/결제 시스템</li>
+        <li>온보딩 & 프로필 관리</li>
+      </ul>
+    </section>
+
+    <section id="decisions">
+      <div class="eyebrow">04 · Decisions</div>
+      <h2>결정 사항</h2>
+      <div class="callout-stack">
+        <div class="callout decision"><span class="tag">결정</span><div class="body">레퍼런스는 헤이링. 핵심 기능/플로우를 최대한 유사하게 구현한다.</div></div>
+        <div class="callout decision"><span class="tag">카피 범위</span><div class="body">UI/UX(화면 구성·색감·레이아웃·인터랙션)까지 최대한 비슷하게 재현. 단 브랜드명/로고는 별도로 정함 — 상표 그대로 도용하지 않음. <em>새 서비스명 정하기 To-do 남음.</em></div></div>
+        <div class="callout decision"><span class="tag">전화 구현</span><div class="body">실제 PSTN 없이 <strong>인앱 콜 UI 시뮬레이션</strong>. 수신 화면·받기/거절·통화 화면 모두 웹앱 내 재현, 실제 전화망 연동 없음.</div></div>
+        <div class="callout decision"><span class="tag">플랫폼</span><div class="body"><strong>웹 앱</strong>으로 시작. 브라우저에서 바로 접근. 모바일 앱 전환은 추후 고려.</div></div>
+        <div class="callout decision"><span class="tag">전화 트리거</span><div class="body">예약 시각 + 웹푸시가 아니라, "전화 걸기" 버튼을 누르면 즉시 수신 화면이 뜨는 <strong>온디맨드 방식</strong>. 백그라운드 스케줄러/푸시 인프라 불필요.</div></div>
+        <div class="callout decision"><span class="tag">음성</span><div class="body">처음부터 음성 포함. 브라우저 내장 <strong>Web Speech API</strong>(SpeechRecognition + SpeechSynthesis) 사용 — 무료, 별도 서버/키 불필요.</div></div>
+        <div class="callout decision"><span class="tag">LLM</span><div class="body"><strong>Gemini API</strong>(Google AI Studio)로 대화 생성. 2차 갱신 — 처음엔 OpenAI였으나 사용자 요청으로 전환.</div></div>
+        <div class="callout decision"><span class="tag">기술 스택</span><div class="body"><strong>Next.js + TypeScript</strong> — 프론트/백엔드(API Route)를 한 프로젝트에서 해결. 배포는 추후 Vercel 등 고려.</div></div>
+        <div class="callout decision"><span class="tag">계정/결제</span><div class="body">MVP에서는 <strong>둘 다 생략</strong>. 로그인 없이 바로 사용, 결제 플로우 없음.</div></div>
+      </div>
+    </section>
+
+    <section id="mvp">
+      <div class="eyebrow">05 · Scope</div>
+      <h2>MVP 기능 범위 (1차 확정)</h2>
+      <ol class="plain">
+        <li>온보딩 — AI 페르소나(이름/성격/관심사) 간단 설정, 최소 형태로 시작</li>
+        <li>홈 화면 "전화 걸기" 버튼 → 인앱 수신 전화 화면 UI (헤이링 스타일 수신/받기/거절)</li>
+        <li>통화 화면 — 마이크 발화 → STT(Web Speech API) → Gemini API 응답 생성 → TTS 재생, 영한 자막 동시 표시</li>
+        <li>대화 중 힌트/질문하기 버튼</li>
+        <li>실시간 교정(패러프레이징) — 더 자연스러운 표현 제안 + 이유 설명</li>
+        <li>통화 종료 후 자동 리포트 — 요약, 교정된 표현 목록, 간단 피드백</li>
+        <li>계정/결제 없이 세션·localStorage 기반 최소 히스토리</li>
+      </ol>
+    </section>
+
+    <section id="architecture">
+      <div class="eyebrow">06 · Architecture</div>
+      <h2>아키텍처 초안</h2>
+      <div class="stack">
+        <div class="stack-item"><span class="label">FRONTEND</span><div>Next.js(App Router) + TypeScript, React 컴포넌트로 홈 / 수신화면 / 통화화면 / 리포트화면 구성</div></div>
+        <div class="stack-item"><span class="label">BACKEND</span><div>Next.js API Route에서 Gemini API 호출 (대화 생성 · 교정 · 리포트 요약) — API 키는 서버사이드에서만 사용</div></div>
+        <div class="stack-item"><span class="label">VOICE</span><div>브라우저 Web Speech API를 클라이언트에서 직접 사용, 서버 경유하지 않음</div></div>
+        <div class="stack-item"><span class="label">STATE</span><div>초기엔 React state + localStorage, DB는 필요해지면 추후 도입</div></div>
+      </div>
+    </section>
+
+    <section id="open-1">
+      <div class="eyebrow">07 · Open Questions</div>
+      <h2>열린 질문 (1차)</h2>
+      <div class="callout-stack">
+        <div class="callout question"><span class="tag">서비스명</span><div class="body">헤이링을 대체할 자체 서비스명 필요 (임시로 "phone_english" 유지 중)</div></div>
+        <div class="callout question"><span class="tag">페르소나</span><div class="body">프리셋 캐릭터를 몇 개 제공할지, 사용자 커스터마이징 범위는 어디까지</div></div>
+        <div class="callout question"><span class="tag">리포트 지표</span><div class="body">유창성 점수 산출 방식 단순화 필요 — 정교한 음성 분석은 MVP 밖으로 볼지</div></div>
+      </div>
+    </section>
+
+    <section id="uiux">
+      <div class="eyebrow">08 · UI/UX Teardown</div>
+      <h2>실제 앱 UI/UX 상세 분석</h2>
+      <p class="lede">사용자가 헤이링 앱을 직접 사용하며 캡처한 스크린샷 19장 기반. 텍스트 리서치보다 훨씬 정확한 1차 자료이므로 <strong>UI 구현 시 최우선 기준</strong>으로 삼는다.</p>
+
+      <div class="card" style="margin-bottom:1.6rem;">
+        <h3 style="font-size:0.95rem; margin-bottom:0.6rem;">전체 톤 — 기존 가정 수정</h3>
+        <ul class="plain">
+          <li>홈/통화 관련 화면은 <strong>블랙 배경</strong>이 압도적. 리포트 목록/보관함/발화기록 등 일부 데이터 화면만 <strong>화이트 배경</strong> — 화면별 다크/라이트 혼용.</li>
+          <li>포인트 컬러는 <strong>그린/민트 계열</strong>(통화 버튼, 패러프레이징 완료 태그, 유창성 게이지) — "배경이 민트"가 아니라 <strong>블랙 바탕 + 그린 포인트</strong>가 정확한 설명.</li>
+          <li>발음 점수는 색상으로 구분 — 초록(좋음) / 노랑(보통) / 빨강(개선 필요), ELSA Speak류 단어별 채점과 유사.</li>
+        </ul>
+      </div>
+
+      <div class="legend">
+        <div class="legend-item"><span class="legend-swatch" style="background:var(--accent);"></span>핵심 인터랙션</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:var(--amber);"></span>확인 필요 / 추정</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:var(--text-muted);"></span>참고용 (MVP 범위 밖 가능)</div>
+      </div>
+
+      <div class="screen-grid">
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 01 / 11</span><h3>홈 화면</h3></div>
+          <ul>
+            <li>블랙 배경. 상단 좌우 "일정" / "학습" 텍스트 탭, 우측에 스트릭 카운터(🔥 0)와 프로필 아이콘.</li>
+            <li>화면 정중앙에 AI 캐릭터 이름이 <mark>매우 큰 손글씨체</mark>로 표시 (예: "Haze").</li>
+            <li>하단 바: 좌측 일정(캘린더) · 중앙 큰 원형 초록 통화 버튼(돌출) · 우측 학습(파형) — 3아이콘 탭바 구조.</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 02 / 11</span><h3>일정(스케줄) 화면</h3></div>
+          <ul>
+            <li>"오늘 일정" 라벨 + 큰 시간 텍스트 + 초록 체크 아이콘.</li>
+            <li>"반복 일정" 섹션 + "수정" 링크, 카드형 리스트로 반복 예약 표시(예: "토요일 19:00").</li>
+            <li>참고용 — MVP는 온디맨드 트리거로 대체하므로 이 화면 로직은 다르게 구현.</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 03 / 11</span><h3>리포트 목록 (통화 / 보관 탭)</h3></div>
+          <ul>
+            <li>화이트 배경. 상단 탭 "통화" / "보관" — 선택된 탭은 검은 필.</li>
+            <li>통화 탭 빈 상태: 문서 아이콘 + "아직 통화 리포트가 없어요" + 부연 문구.</li>
+            <li>보관 탭 빈 상태: 폴더 아이콘 + "표현"/"문장" 서브 토글.</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 04 / 11</span><h3>학습 — 발화 기록</h3></div>
+          <ul>
+            <li>블랙 배경. 제목 "발화 기록", 큰 통계 "🔥 0 단어", CTA "이번주도 달려볼까요?"</li>
+            <li>월별 캘린더, 날짜마다 물방울/불꽃 아이콘으로 스트릭 표시(히트맵 캘린더).</li>
+            <li>하단 통계 카드 2개: "통화 N회" / "학습 N분".</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 05 / 11</span><h3>온보딩 / 마케팅 티저</h3></div>
+          <ul>
+            <li>헤드카피 "대화를 분석해 더 유창하게 말할 수 있게 도와줄게요"</li>
+            <li>겹쳐진 카드 스택으로 리포트 예시 미리보기: 교정 단어 하이라이트 카드 + 발화 속도 비율 바 카드.</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 06 / 11</span><h3>수신 전화 / 통화 시작</h3></div>
+          <ul>
+            <li>상단 좌측 <mark>전구(힌트)</mark> 아이콘, 우측 설정 아이콘, 중앙 타이머 + AI 이름.</li>
+            <li>AI 첫 인사가 영어 → 한국어 순으로 순차 표시.</li>
+            <li><mark>온보딩 툴팁</mark>: 점선 화살표가 힌트 아이콘을 가리키며 "대화가 막힐 때는 힌트를 사용해보세요" 안내.</li>
+            <li>각 AI 발화 아래 깃발(신고)/북마크(저장) 아이콘.</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 07 / 11</span><h3>통화 중 화면 — 핵심 인터랙션</h3></div>
+          <ul>
+            <li>사용자 발화: 오른쪽 정렬 말풍선으로 즉시 표시(STT), 아래 "패러프레이징 하고 있어요…" → 완료 시 <mark>초록 "👍 패러프레이징"</mark> 필로 전환.</li>
+            <li>AI 발화: 왼쪽 정렬, 타이핑 스트리밍 → 완료 후 영문 아래 회색 작은 글씨로 한국어 번역(영한 동시 자막).</li>
+            <li>하단 컨트롤: 빨간 "종료" / 회색 "말하기"(마이크, PTT 추정) / 회색 "주제"(도형 아이콘).</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 08 / 11</span><h3>주제(topic) 선택 다이얼</h3></div>
+          <ul>
+            <li>"주제" 버튼 → 블러 배경 원형 다이얼 오버레이.</li>
+            <li>중앙에 현재 선택 항목 + 설명 + "선택" 버튼.</li>
+            <li>방사형 메뉴: 나(사람) / 커리어(새싹) / 관계(하트) / 감정(스마일), 중앙 X로 닫기.</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 09 / 11</span><h3>통화 종료 직후 요약</h3></div>
+          <ul>
+            <li>완전 블랙 배경, 거대한 숫자(예: "139")가 중앙에 크게 표시.</li>
+            <li>아래 필 라벨 "🔥 내가 말한 단어" — 통화 직후 임팩트 있는 축하/요약 스크린.</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 10 / 11</span><h3>리포트 상세</h3></div>
+          <ul>
+            <li>상단 <mark>핑크 긴급 배너</mark> "⏰ 할인 혜택이 곧 사라져요 04:43" — 실시간 카운트다운, 통화 직후 구독 유도 UX.</li>
+            <li>제목은 AI가 생성한 대화 주제명(예: "군대 동기와의 솔직한 대화") + 날짜.</li>
+            <li>스탯 필 "🔥139"(단어 수) + 초록 필 "나의 유창성".</li>
+            <li>반원형 게이지(0~100) — 복습 전 "?" 잠금 상태. 발음/운율/유창 3개 스탯 카드(복습 전 00%).</li>
+            <li>"✨ 내게 딱 맞는 원어민 표현" 캐러셀(예: 7개 중 1/7) — 표현 + 뜻 + 예문(하이라이트) + 북마크 + "🎤 연습".</li>
+            <li>스크롤 하단 "통화 내용" 섹션 — 전체 트랜스크립트 리뷰, AI 말풍선마다 깃발/재생/번역/북마크 4아이콘.</li>
+          </ul>
+        </div>
+
+        <div class="screen-card">
+          <div class="head"><span class="count">SCREEN 11 / 11</span><h3>표현 섀도잉 / 발음 연습 모드</h3></div>
+          <ul>
+            <li>스토리 형식 풀스크린 — X 닫기 + 세그먼트 진행바 + N/7 카운터 + 북마크.</li>
+            <li>중앙 스피커 재생 + 큰 영문 예문 + 한글 번역, 하단 "따라 말해보세요" + <mark>눈 모양 아이콘(스크립트 숨기기 토글)</mark> — 유저 요청 기능이 이미 구현되어 있음.</li>
+            <li>녹음 후: "Great!" 등급 텍스트 + 단어별 <mark>초록/노랑/빨강</mark> 색칠 + 원어민/나 비교 재생 + 재시도/다음 버튼.</li>
+            <li>상세 점수 바텀시트: 종합 점수 게이지(예: 96%) + 발음 91% / 운율 99% / 유창 99%.</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 style="font-size:1rem; margin: 1.6rem 0 0.7rem;">열린 질문 (업데이트)</h3>
+      <div class="callout-stack">
+        <div class="callout question"><span class="tag">진입 경로</span><div class="body">리포트 목록 화면에 어디서 진입하는지 스크린샷만으로 불명확 (홈 화면에 탭이 안 보임)</div></div>
+        <div class="callout question"><span class="tag">말하기 버튼</span><div class="body">PTT(누르고 말하기)인지 토글(켜고 끄기)인지 스크린샷만으로 확정 불가</div></div>
+        <div class="callout question"><span class="tag">교정 케이스</span><div class="body">실제 교정이 필요한 경우 UI가 어떻게 보이는지 — 캡처에는 전부 "👍 패러프레이징" 승인 케이스만 있음</div></div>
+      </div>
+    </section>
+
+    <section id="decisions-2">
+      <div class="eyebrow">09 · Decisions</div>
+      <h2>결정 사항 추가 (2차)</h2>
+      <div class="callout-stack">
+        <div class="callout decision"><span class="tag">디자인 톤</span><div class="body">블랙 베이스 + 그린/민트 포인트로 실제 헤이링과 동일하게 확정. 홈/통화 화면은 블랙, 리포트 목록/보관함류는 화이트로 혼용.</div></div>
+        <div class="callout decision"><span class="tag">MVP 범위</span><div class="body">"핵심 루프만"에서 <strong>거의 전체 기능</strong>으로 확장. 단, 개발은 한 번에 다 만들지 않고 화면/기능 단위로 <strong>단계적 iteration</strong> 진행.</div></div>
+      </div>
+    </section>
+
+    <section id="target-screens">
+      <div class="eyebrow">10 · Scope</div>
+      <h2>목표 화면/기능 전체 목록</h2>
+      <ol class="plain">
+        <li>홈 화면 (AI 캐릭터, 전화 걸기 버튼, 스트릭)</li>
+        <li>온보딩 (AI 페르소나 설정, 기능 소개 티저)</li>
+        <li>수신 전화 → 통화 중 화면 (STT/TTS, 영한 자막, 실시간 패러프레이징, 힌트, 주제 선택 다이얼, PTT 말하기 버튼)</li>
+        <li>통화 종료 요약 화면 (말한 단어 수 등 임팩트 스탯)</li>
+        <li>리포트 상세 (AI 생성 제목, 발음/운율/유창 지표, 원어민 표현 캐러셀, 전체 트랜스크립트 리뷰)</li>
+        <li>표현 섀도잉/발음 연습 모드 (스크립트 숨기기 토글, 단어별 색상 채점, 상세 점수)</li>
+        <li>리포트 목록 (통화/보관 탭, 빈 상태 포함)</li>
+        <li>학습 — 발화 기록 (스트릭 캘린더, 누적 통계)</li>
+        <li>일정 설정 화면 (반복 일정 UI — 실제 트리거는 온디맨드로 대체)</li>
+      </ol>
+    </section>
+
+    <section id="build-order">
+      <div class="eyebrow">11 · Roadmap</div>
+      <h2>빌드 순서 (제안)</h2>
+      <div class="stepper">
+        <div class="step">
+          <div class="rail"><div class="node">1</div><div class="line"></div></div>
+          <div class="content"><h3>프로젝트 스캐폴딩</h3><p>Next.js + TypeScript, 블랙/그린 디자인 시스템 기본 토큰 설정</p></div>
+        </div>
+        <div class="step">
+          <div class="rail"><div class="node">2</div><div class="line"></div></div>
+          <div class="content"><h3>홈 화면 + 온보딩</h3><p>AI 캐릭터, 전화 걸기 버튼, 페르소나 설정 플로우</p></div>
+        </div>
+        <div class="step">
+          <div class="rail"><div class="node">3</div><div class="line"></div></div>
+          <div class="content"><h3>통화 중 화면 (핵심)</h3><p>STT/TTS/LLM 연동, 영한 자막, 실시간 패러프레이징</p></div>
+        </div>
+        <div class="step">
+          <div class="rail"><div class="node">4</div><div class="line"></div></div>
+          <div class="content"><h3>통화 종료 요약 + 리포트 상세</h3><p>임팩트 스탯 화면, 발음/운율/유창 지표, 원어민 표현 카드</p></div>
+        </div>
+        <div class="step">
+          <div class="rail"><div class="node">5</div><div class="line"></div></div>
+          <div class="content"><h3>표현 섀도잉 연습 모드</h3><p>스크립트 숨기기, 단어별 채점, 상세 점수 바텀시트</p></div>
+        </div>
+        <div class="step">
+          <div class="rail"><div class="node">6</div></div>
+          <div class="content"><h3>부가 기능</h3><p>리포트 목록, 발화 기록(통계), 일정 화면</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="implementation">
+      <div class="eyebrow">12 · Build Log</div>
+      <h2>구현 현황 — 6-에이전트 병렬 빌드 완료</h2>
+      <p class="lede">"서브에이전트 4개(나 포함)로 빠르게 개발"→"3개 더 추가"라는 사용자 요청으로 2라운드(총 6개) 서브에이전트를 병렬로 돌려 MVP 전체를 구현했다.</p>
+
+      <div class="stat-row">
+        <div class="stat"><span class="k">tsc --noEmit</span><span class="v">0 errors</span></div>
+        <div class="stat"><span class="k">eslint</span><span class="v">0 errors / 0 warnings</span></div>
+        <div class="stat"><span class="k">next build</span><span class="v">10/10 routes clean</span></div>
+      </div>
+
+      <h3 style="font-size:1rem; margin-bottom:0.7rem;">1라운드 — 기능 구현</h3>
+      <div class="stack" style="margin-bottom:1.6rem;">
+        <div class="stack-item"><span class="label">나</span><div>Next.js 16 + TS + Tailwind v4 스캐폴딩, 디자인 토큰, 공용 타입/스토리지, PhoneShell·Pill·ScoreGauge, Gemini API 라우트(<code>/api/converse</code>, <code>/api/report</code>)</div></div>
+        <div class="stack-item"><span class="label">에이전트 A</span><div>홈(<code>/</code>) · 온보딩 · 일정(<code>/schedule</code>)</div></div>
+        <div class="stack-item"><span class="label">에이전트 B</span><div>통화 플로우 전체(<code>/call</code>) — 수신→PTT 통화→주제 다이얼→종료 요약→리포트 이동</div></div>
+        <div class="stack-item"><span class="label">에이전트 C</span><div>리포트 목록·상세·섀도잉 연습·발화기록 통계</div></div>
+      </div>
+
+      <div class="callout note" style="margin-bottom:1.6rem;"><span class="tag">중간 통합</span><div class="body">내가 직접 <code>useSyncExternalStore</code> 기반 <code>useClientValue</code> 훅을 만들어 localStorage 읽기 패턴을 정리하고, ESLint 에러(<code>react-hooks/set-state-in-effect</code>, <code>react-hooks/purity</code>, <code>no-explicit-any</code> 등)를 전부 해결한 뒤 2라운드 진행.</div></div>
+
+      <h3 style="font-size:1rem; margin-bottom:0.7rem;">2라운드 — 폴리시 + 견고성 + QA</h3>
+      <div class="stack">
+        <div class="stack-item"><span class="label">에이전트 D</span><div>보관함(북마크) 실기능 — <code>src/lib/archive.ts</code> 신규, 연습 화면 "🔊 나" 자기 음성 비교 재생(MediaRecorder)</div></div>
+        <div class="stack-item"><span class="label">에이전트 E</span><div>404/에러 바운더리, 라우트별 로딩 스켈레톤, 라우트별 메타데이터 — 전부 신규 파일이라 충돌 없이 작업</div></div>
+        <div class="stack-item"><span class="label">에이전트 F</span><div>실제 dev 서버로 첫 런타임 검증(브라우저 도구 없어 curl+코드 추적으로 대체) — 501 폴백 UI 정상 동작, 하이드레이션 불일치 없음 확인</div></div>
+      </div>
+
+      <h3 style="font-size:1rem; margin: 1.6rem 0 0.7rem;">남은 것</h3>
+      <div class="callout-stack">
+        <div class="callout question"><span class="tag">Gemini 키</span><div class="body">실제 키로 라이브 테스트 안 됨 — <code>.env.local</code>이 아직 없어 지금까지는 501 폴백 경로만 검증됨</div></div>
+        <div class="callout question"><span class="tag">브랜딩</span><div class="body">서비스명 미정, 임시로 "phone_english" 유지</div></div>
+        <div class="callout note"><span class="tag">시각 디테일</span><div class="body">주제 다이얼은 원형이 아닌 2×2 그리드로 단순화, 페르소나 이름은 손글씨 폰트 대신 CSS 이탤릭체로 대체</div></div>
+        <div class="callout note"><span class="tag">Git</span><div class="body">커밋은 아직 하지 않음 — 사용자 요청 시 진행</div></div>
+      </div>
+    </section>
+
+    <section id="progress">
+      <div class="eyebrow">13 · Notes</div>
+      <h2>진행 관련 메모</h2>
+      <div class="callout-stack">
+        <div class="callout note"><span class="tag">API 키</span><div class="body">Gemini API 키는 사용자가 <code>.env.local</code>에 직접 넣기로 함. 채팅으로 전달된 값은 형식이 표준 키(<code>AIzaSy...</code>)와 달라 코드에 반영하지 않고 확인 절차를 거침.</div></div>
+        <div class="callout note"><span class="tag">진행 상태</span><div class="body">스캐폴딩은 아직 시작 전 — 코드 작성 전 화면별 UI/UX를 먼저 구체화하는 단계.</div></div>
+      </div>
+    </section>
+
+    <section id="requirements">
+      <div class="eyebrow">14 · Requirements</div>
+      <h2>요구사항</h2>
+      <div class="card">
+        <ul class="plain">
+          <li>MVP 기능 범위는 위 "MVP 기능 범위" 섹션 참고</li>
+          <li>코드 작성 시 이 문서의 "결정 사항"과 "아키텍처 초안"을 항상 우선 참고할 것</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <span>docs/PROJECT_NOTES.md 를 그대로 옮긴 열람용 사본</span>
+  <span>phone_english · call log</span>
+</footer>
+
+<script>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('nav.toc a'));
+    var sections = links.map(function (a) {
+      return document.querySelector(a.getAttribute('href'));
+    });
+    if (!('IntersectionObserver' in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        var idx = sections.indexOf(entry.target);
+        if (idx === -1) return;
+        if (entry.isIntersecting) {
+          links.forEach(function (l) { l.classList.remove('active'); });
+          links[idx].classList.add('active');
+        }
+      });
+    }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+    sections.forEach(function (s) { if (s) io.observe(s); });
+  })();
+</script>
+
+</body>
+</html>
