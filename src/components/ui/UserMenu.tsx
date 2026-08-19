@@ -5,12 +5,12 @@ import { signOut, useSession } from "next-auth/react";
 
 /**
  * Small avatar button (replaces the old static 🙂 placeholder) — click to
- * reveal the signed-in user's name/email and a sign-out link.
+ * reveal a sign-out link. Single-user passcode login (src/lib/auth.ts) has
+ * no name/email/image to show, just a fixed "Me".
  */
 export function UserMenu() {
-  const { data: session } = useSession();
   const [open, setOpen] = useState(false);
-  const user = session?.user;
+  useSession(); // keeps the session live-refreshed for signOut() below
 
   return (
     <div className="relative">
@@ -19,17 +19,11 @@ export function UserMenu() {
         aria-label="계정"
         className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-ink-700 bg-ink-800 text-xs text-ink-400"
       >
-        {user?.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={user.image} alt="" className="h-full w-full object-cover" />
-        ) : (
-          "🙂"
-        )}
+        🙂
       </button>
       {open && (
-        <div className="absolute right-0 top-10 z-10 w-48 rounded-xl border border-ink-700 bg-ink-900 p-3 text-left shadow-xl">
-          <p className="truncate text-sm font-medium text-ink-100">{user?.name ?? "사용자"}</p>
-          <p className="mb-3 truncate text-xs text-ink-400">{user?.email}</p>
+        <div className="absolute right-0 top-10 z-10 w-40 rounded-xl border border-ink-700 bg-ink-900 p-3 text-left shadow-xl">
+          <p className="mb-3 truncate text-sm font-medium text-ink-100">로그인됨</p>
           <button
             onClick={() => signOut({ redirectTo: "/sign-in" })}
             className="w-full rounded-full border border-ink-700 py-1.5 text-xs text-ink-100 transition hover:border-coral-400 hover:text-coral-400"

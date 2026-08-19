@@ -1,10 +1,15 @@
 import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
 
 /**
- * Google-only sign-in, JWT session strategy (no auth DB adapter needed —
- * app data in src/lib/db.ts is scoped by the user's Google account email
- * instead). See docs/PROJECT_NOTES.md decisions for why.
+ * Single-user passcode login — swapped in for Google OAuth because Google
+ * Cloud Console's OAuth consent screen kept failing to create ("OAuth 구성을
+ * 만드는 중에 오류가 발생했습니다") and this app only has one user anyway
+ * (see docs/PROJECT_NOTES.md decisions, 8차). No external console setup,
+ * no client id/secret — just AUTH_PASSCODE in .env.local / Vercel env vars.
+ *
+ * JWT session strategy; the fixed user id "owner" is what src/lib/db.ts
+ * scopes all app data by (there's only ever one).
  */
 export const {
   handlers: { GET, POST },
@@ -12,7 +17,22 @@ export const {
   signIn,
   signOut,
 } = NextAuth({
-  providers: [Google],
+  providers: [
+    Credentials({
+      credentials: { passcode: { label: "Passcode", type: "password" } },
+      async authorize(credentials) {
+        const passcode = credentials?.passcode;
+        const expected = process.env.AUTH_PASSCODE;
+        if (!expected) {
+          throw new Error("AUTH_PASSCODE is not set on the server.");
+        }
+        if (typeof passcode !== "string" || passcode !== expected) {
+          return null;
+        }
+        return { id: "owner", name: "Me" };
+      },
+    }),
+  ],
   session: { strategy: "jwt" },
   pages: { signIn: "/sign-in" },
   callbacks: {

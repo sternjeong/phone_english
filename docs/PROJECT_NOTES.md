@@ -270,11 +270,22 @@
 2. **로그인 게이트가 실제로는 동작하지 않음**: `export { auth as proxy } from "@/lib/auth"`만으로는 `req.auth`를 채워줄 뿐 비로그인 요청을 리다이렉트하지 않는다는 걸 실제 `curl` 테스트로 발견(비로그인 상태로 `/`에 접속했는데 200 OK가 옴 — 정적 검사로는 절대 못 잡음). NextAuth v5의 `callbacks.authorized`를 추가해야 Proxy에서 실제 리다이렉트가 동작함을 확인 후 수정 → 재검증: 비로그인 `/` 요청은 307 → `/sign-in`, `/api/data/persona`는 401.
 3. **Next.js 16 `middleware.ts` deprecation**: 빌드 시 "middleware 파일 컨벤션은 deprecated, proxy 사용" 경고 발견 → `node_modules/next/dist/docs/.../proxy.md` 확인 후 `src/middleware.ts` → `src/proxy.ts`로 이름 변경, export도 `proxy`로 변경 (AGENTS.md가 경고했던 "이 Next.js는 아는 Next.js가 아니다" 케이스 그대로).
 
-### 사용자가 직접 해야 하는 것 (외부 계정이라 내가 대신할 수 없음)
-1. **Google OAuth 클라이언트 생성**: [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth 클라이언트 ID 생성 → 승인된 리디렉션 URI에 `<배포주소>/api/auth/callback/google` (로컬 테스트는 `http://localhost:3000/api/auth/callback/google`) 등록 → Client ID/Secret을 `.env.local`(로컬)과 Vercel 환경변수(배포)에 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`으로 등록
-2. **Vercel 프로젝트 연결**: Vercel 계정에서 이 GitHub 레포(`sternjeong/phone_english`) import → Storage 탭에서 Postgres 추가(=Neon) → 자동으로 `POSTGRES_URL` 등 환경변수 주입됨
-3. **AUTH_SECRET**: `npx auth secret`으로 생성하거나 아무 랜덤 문자열, Vercel 환경변수에도 등록
+### 사용자가 직접 해야 하는 것 (외부 계정이라 내가 대신할 수 없음) — 8차 갱신으로 축소됨
+1. **Vercel 프로젝트 연결**: Vercel 계정에서 이 GitHub 레포(`sternjeong/phone_english`) import → Storage 탭에서 Postgres 추가(=Neon) → 자동으로 `POSTGRES_URL` 등 환경변수 주입됨
+2. **AUTH_SECRET**: `npx auth secret`으로 생성하거나 아무 랜덤 문자열, Vercel 환경변수에도 등록
+3. **AUTH_PASSCODE**: 원하는 로그인 비밀번호, Vercel 환경변수에도 등록 (아래 8차 갱신 참고 — Google 로그인 대체)
 4. **GEMINI_API_KEY**: 기존과 동일하게 Vercel 환경변수에도 등록 필요 (로컬 `.env.local`에만 있으면 배포본에서는 501)
+
+## 8차 갱신 (2026-08-19) — Google 로그인 → 패스코드 로그인으로 전환
+사용자가 Google Cloud Console에서 OAuth 동의 화면/클라이언트 ID 생성 중 반복적으로 원인 불명 에러("OAuth 구성을 만드는 중에 오류가 발생했습니다")를 겪음 → 어차피 본인만 쓰는 개인 서비스이므로 Google OAuth를 완전히 걷어내고 **단일 사용자 패스코드 로그인**으로 전환.
+
+### 결정 사항 (8차)
+- `src/lib/auth.ts`: NextAuth Google 프로바이더 제거, **Credentials 프로바이더**로 교체. `AUTH_PASSCODE` 환경변수와 대조해 맞으면 고정 사용자 `{ id: "owner", name: "Me" }` 반환. Google Cloud Console 설정 자체가 필요 없어짐.
+- `src/lib/apiAuth.ts`: 사용자 키를 `session.user.email` → `session.user.id`(항상 `"owner"`)로 변경. 사용자가 한 명뿐이므로 이메일 대신 고정 ID로 DB 스코프.
+- `src/app/sign-in/page.tsx`: Google 버튼 → 비밀번호 입력 폼(클라이언트 컴포넌트, `signIn("credentials", { passcode, redirect: false })`)으로 교체. 틀린 비밀번호 시 인라인 에러 메시지.
+- `src/components/ui/UserMenu.tsx`: Google 프로필 사진/이메일 표시 제거 (패스코드 로그인엔 없음) → "로그인됨" 고정 텍스트 + 로그아웃 버튼만.
+- `.env.local.example`: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` 제거, `AUTH_PASSCODE` 추가.
+- **라이브 검증 완료**: Playwright로 로그인 플로우 직접 테스트 — 틀린 비밀번호 → 에러 메시지 표시, 맞는 비밀번호 → 홈 화면 이동 확인. (홈 화면의 "정보를 불러오지 못했어요"는 `POSTGRES_URL`이 아직 없어서 발생하는 것으로, DB 미설정 시의 정상적인 폴백 동작 — 버그 아님)
 
 ## 요구사항 (Requirements)
 - MVP 기능 범위는 위 "MVP 기능 범위 (확정)" 섹션 참고
