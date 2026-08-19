@@ -229,10 +229,15 @@
 **최종 상태**: `npx tsc --noEmit`, `npm run lint`, `npm run build` 전부 에러 0건. 라우트 10개(`/`, `/onboarding`, `/schedule`, `/call`, `/reports`, `/reports/[id]`, `/reports/[id]/practice/[expressionId]`, `/stats`, `/api/converse`, `/api/report`) 전부 정상 컴파일. MVP 기능 범위 + 확장 목표 화면 9개 전부 구현 완료.
 
 **남은 것**:
-1. **실제 Gemini API 키로 라이브 테스트 안 됨** — `.env.local`이 아직 없어 지금까지는 501 폴백 경로만 검증됨. 사용자가 유효한 키를 `.env.local`에 넣어야 진짜 대화 품질을 확인 가능.
-2. 서비스명/브랜딩 미정 (임시로 "phone_english" 유지)
+1. ~~실제 Gemini API 키로 라이브 테스트 안 됨~~ → **2026-08-17 (5차) 해결**. 사용자가 다시 전달한 값을 `curl`로 Gemini API에 직접 검증: `AQ.`로 시작하는 형식이었지만(계속 의심했던 그 값) 실제로 **유효한 키였음** — 이전에 예상했던 `AIzaSy...` 형식만 유효하다는 가정이 틀렸던 것으로 확인. 다만 기본 모델로 쓰던 `gemini-2.0-flash`는 API가 "더 이상 지원 안 함, `gemini-3.6-flash` 쓰라"는 404 에러를 반환해 모델명을 교체함 (`src/lib/gemini.ts`, `.env.local.example` 갱신). `.env.local`에 키를 넣고 `/api/converse`·`/api/report`를 직접 `curl`로 호출해 실제 자연스러운 영어 대화·한국어 번역·원어민 표현 추출이 정상 동작하는 것까지 확인함.
+2. ~~서비스명/브랜딩 미정~~ → **2026-08-17 (5차) 결정**: 브랜드명은 **"Good Morning"**으로 확정 (`src/app/layout.tsx` 및 각 라우트 `layout.tsx`의 `<title>`, `README.md`에 반영).
 3. 시각적 디테일 일부 단순화됨 (주제 다이얼은 원형이 아닌 2x2 그리드, 페르소나 이름은 실제 손글씨 폰트가 아닌 CSS 이탤릭체로 대체)
-4. git 커밋은 아직 하지 않음 (사용자가 요청하지 않아 보류 중)
+4. **git 커밋 완료** (2026-08-17, 사용자 요청으로 로컬 커밋 — 아직 push는 안 함)
+
+## 결정 사항 (5차, 2026-08-17)
+- **브랜드명**: "Good Morning" 확정
+- **LLM 모델**: `gemini-3.6-flash` (기존 `gemini-2.0-flash`는 deprecated로 확인됨)
+- **Gemini 키 형식에 대한 기존 가정 정정**: `AIzaSy...`만 유효하다고 가정했던 게 틀렸음 — `AQ.`로 시작하는 키도 실제로 동작함이 `curl` 테스트로 확인됨. (여전히 두 번째로 보내졌던 값의 용도는 불명확 — 필요시 재확인)
 
 ## 요구사항 (Requirements)
 - MVP 기능 범위는 위 "MVP 기능 범위 (확정)" 섹션 참고

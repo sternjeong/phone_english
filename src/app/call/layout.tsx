@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "통화 · phone_english",
+  title: "통화 · Good Morning",
 };
 
 export default function CallLayout({ children }: LayoutProps<"/call">) {

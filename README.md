@@ -1,4 +1,4 @@
-# phone_english
+# Good Morning
 
 헤이링(HeyRing)을 레퍼런스로 삼은 AI 전화영어 웹앱. AI가 먼저 전화를 걸어와 받으면 바로 영어 회화 연습이 시작되는 경험을 웹에서 재현합니다.
 

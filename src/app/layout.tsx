@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "phone_english",
+  title: "Good Morning",
   description: "AI가 먼저 전화를 거는 전화영어 연습 웹앱",
 };
 
