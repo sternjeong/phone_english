@@ -3,17 +3,22 @@
 import Link from "next/link";
 import { PhoneShell } from "@/components/ui/PhoneShell";
 import { Pill } from "@/components/ui/Pill";
+import { UserMenu } from "@/components/ui/UserMenu";
 import { storage } from "@/lib/storage";
-import { useClientValue } from "@/lib/useClientValue";
+import { useAsync } from "@/lib/useAsync";
 
 /** SCREEN 01 — home. Black background, cursive-ish AI name centered, bottom
  * 3-item bar with a big mint call button. See docs/PROJECT_NOTES.md. */
 export default function HomePage() {
-  const persona = useClientValue(() => storage.getPersona(), null);
-  const totalWords = useClientValue(
-    () => Object.values(storage.getWordStreak()).reduce((sum, n) => sum + n, 0),
-    0
-  );
+  const personaState = useAsync(() => storage.getPersona(), []);
+  const streakState = useAsync(() => storage.getWordStreak(), []);
+
+  const persona = personaState.status === "ready" ? personaState.data : null;
+  const totalWords =
+    streakState.status === "ready"
+      ? Object.values(streakState.data).reduce((sum, n) => sum + n, 0)
+      : 0;
+  const hasError = personaState.status === "error" || streakState.status === "error";
 
   return (
     <PhoneShell tone="ink">
@@ -27,18 +32,15 @@ export default function HomePage() {
         </Link>
         <div className="flex items-center gap-2">
           <Pill tone="amber">🔥 {totalWords}</Pill>
-          <div
-            aria-hidden
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-ink-700 bg-ink-800 text-xs text-ink-400"
-          >
-            🙂
-          </div>
+          <UserMenu />
         </div>
       </div>
 
       {/* centerpiece */}
       <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-        {persona ? (
+        {personaState.status === "loading" ? null : hasError ? (
+          <p className="text-sm text-ink-400">정보를 불러오지 못했어요</p>
+        ) : persona ? (
           <>
             <p className="mb-2 text-sm text-ink-400">오늘도 전화할 준비 됐어?</p>
             <h1

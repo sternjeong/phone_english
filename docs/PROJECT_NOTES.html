@@ -402,6 +402,7 @@
     <a href="#implementation">구현 현황</a>
     <a href="#progress">진행 메모</a>
     <a href="#live-verify">실행 검증</a>
+    <a href="#accounts">계정/DB/배포</a>
     <a href="#requirements">요구사항</a>
   </nav>
 
@@ -812,8 +813,31 @@
       </div>
     </section>
 
+    <section id="accounts">
+      <div class="eyebrow">15 · Accounts</div>
+      <h2>계정/DB/배포 전환 (2026-08-19)</h2>
+      <p class="lede">사용자 요청: "streamlit처럼 주소 하나로 항상 접근" + "로그인해서 로그가 쌓이도록". MVP의 "계정 없음, localStorage만" 결정을 뒤집는 변경.</p>
+      <div class="stat-row">
+        <div class="stat"><span class="k">배포</span><span class="v">Vercel</span></div>
+        <div class="stat"><span class="k">로그인</span><span class="v">Google (NextAuth v5, JWT)</span></div>
+        <div class="stat"><span class="k">DB</span><span class="v">Vercel Postgres (Neon)</span></div>
+      </div>
+      <div class="callout-stack" style="margin-bottom:1.6rem;">
+        <div class="callout decision"><span class="tag">아키텍처</span><div class="body"><code>storage.ts</code>/<code>archive.ts</code>가 localStorage 동기 함수 → <code>/api/data/**</code> 호출하는 비동기 함수로 전면 재작성. 6개 Postgres 테이블(JSONB 위주), <code>src/proxy.ts</code>로 앱 전체 로그인 게이트.</div></div>
+        <div class="callout decision"><span class="tag">버그 2건 발견·수정</span><div class="body">① <code>useAsync</code>가 렌더 중 ref를 변경해 React Compiler가 차단 → 클로저 방식으로 단순화. ② 로그인 게이트가 실제로는 리다이렉트를 안 함(<code>curl</code>로 발견, 비로그인 상태에서 200 OK) → NextAuth <code>authorized</code> 콜백 추가로 해결. 둘 다 정적 검사로는 못 잡는 버그.</div></div>
+        <div class="callout note"><span class="tag">Next.js 16</span><div class="body"><code>middleware.ts</code>가 deprecated — <code>proxy.ts</code>로 이름 변경 (빌드 경고 + 번들된 Next.js 문서로 확인).</div></div>
+      </div>
+      <h3 style="font-size:0.95rem; margin-bottom:0.6rem;">사용자가 직접 해야 하는 것</h3>
+      <ol class="plain">
+        <li>Google OAuth 클라이언트 생성 (Google Cloud Console) → 리디렉션 URI 등록 → Client ID/Secret</li>
+        <li>Vercel에 레포 연결 → Storage에서 Postgres 추가(자동으로 <code>POSTGRES_URL</code> 주입)</li>
+        <li><code>AUTH_SECRET</code> 생성 및 등록</li>
+        <li><code>GEMINI_API_KEY</code>도 Vercel 환경변수에 등록 (로컬에만 있으면 배포본은 501)</li>
+      </ol>
+    </section>
+
     <section id="requirements">
-      <div class="eyebrow">15 · Requirements</div>
+      <div class="eyebrow">16 · Requirements</div>
       <h2>요구사항</h2>
       <div class="card">
         <ul class="plain">

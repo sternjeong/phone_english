@@ -5,9 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { PhoneShell } from "@/components/ui/PhoneShell";
 import { ScoreGauge } from "@/components/ui/ScoreGauge";
 import { storage } from "@/lib/storage";
-import { useClientValue } from "@/lib/useClientValue";
+import { useAsync } from "@/lib/useAsync";
 import { useSpeechToText } from "@/components/call/useSpeechToText";
-import type { Expression, PracticeAttempt, Report, WordScore } from "@/lib/types";
+import type { Expression, PracticeAttempt, WordScore } from "@/lib/types";
 
 /**
  * SCREEN 11 — shadowing/pronunciation practice. Full-screen story-style UI
@@ -24,7 +24,8 @@ import type { Expression, PracticeAttempt, Report, WordScore } from "@/lib/types
 export default function ShadowingPracticePage() {
   const params = useParams<{ id: string; expressionId: string }>();
   const router = useRouter();
-  const report = useClientValue<Report | null>(() => storage.getReport(params.id), null);
+  const reportState = useAsync(() => storage.getReport(params.id), [params.id]);
+  const report = reportState.status === "ready" ? reportState.data : null;
   const [hideScript, setHideScript] = useState(false);
   const [attempt, setAttempt] = useState<PracticeAttempt | null>(null);
   const { supported: sttSupported, listening: recording, start, stop } = useSpeechToText();
@@ -101,11 +102,17 @@ export default function ShadowingPracticePage() {
     new Audio(myRecordingUrl).play().catch(() => {});
   }
 
-  if (report === null || report.expressions.length === 0) {
+  if (reportState.status === "loading") {
+    return <PhoneShell tone="ink">{null}</PhoneShell>;
+  }
+
+  if (reportState.status === "error" || report === null || report.expressions.length === 0) {
     return (
       <PhoneShell tone="ink">
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-          <p className="text-ink-100">연습할 표현을 찾을 수 없어요</p>
+          <p className="text-ink-100">
+            {reportState.status === "error" ? "불러오지 못했어요" : "연습할 표현을 찾을 수 없어요"}
+          </p>
           <button
             onClick={() => router.back()}
             className="text-sm text-mint-500 underline"

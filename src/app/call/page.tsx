@@ -8,6 +8,7 @@ import { AiBubble, UserBubble } from "@/components/call/MessageBubble";
 import { useSpeechToText } from "@/components/call/useSpeechToText";
 import { storage } from "@/lib/storage";
 import { useClientValue } from "@/lib/useClientValue";
+import { useAsync } from "@/lib/useAsync";
 import type { ChatMessage, Persona, Topic, CallSession, Report } from "@/lib/types";
 
 const DEFAULT_PERSONA: Persona = {
@@ -96,7 +97,14 @@ export default function CallPage() {
 
   const { supported: sttSupported, listening, start, stop } = useSpeechToText();
 
-  const persona = useClientValue(() => storage.getPersona() ?? DEFAULT_PERSONA, DEFAULT_PERSONA);
+  const personaState = useAsync(() => storage.getPersona(), []);
+  const personaLoading = personaState.status === "loading";
+  if (personaState.status === "error") {
+    // Don't block the call on a persona-fetch failure — fall back below.
+    console.error("Failed to load persona:", personaState.error);
+  }
+  const persona = personaState.status === "ready" ? personaState.data ?? DEFAULT_PERSONA : DEFAULT_PERSONA;
+
   // First-call hint tooltip: derived straight from localStorage so it
   // updates the instant answerCall() flips the flag, no extra state needed.
   const showHint = useClientValue(
@@ -145,12 +153,15 @@ export default function CallPage() {
   }, [persona, topic]);
 
   // Canonical data-fetching-on-mount effect (kicks off a request and sets
-  // loading state) — only run once; persona/topic are stable at call start.
+  // loading state) — waits for the persona fetch to resolve (or fail) so
+  // the greeting call always uses the real persona, not a flash of the
+  // default; only fires once persona is settled.
   useEffect(() => {
+    if (personaLoading) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchGreeting();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [personaLoading]);
 
   const answerCall = () => {
     if (typeof window !== "undefined") {
@@ -304,6 +315,21 @@ export default function CallPage() {
       router.push(`/reports/${report.id}`);
     }, 2200);
   };
+
+  if (personaLoading) {
+    // Blank placeholder while the persona fetch is in flight — mirrors the
+    // pre-hydration blank state the old localStorage-backed version showed
+    // synchronously. Don't show the incoming-call UI or start the greeting
+    // fetch until persona is resolved (fetchGreeting's effect is gated on
+    // personaLoading above).
+    return (
+      <PhoneShell tone="ink">
+        <div className="flex h-full flex-col items-center justify-center bg-ink-950 text-ink-400">
+          <div className="text-sm">연결 중…</div>
+        </div>
+      </PhoneShell>
+    );
+  }
 
   return (
     <PhoneShell tone="ink">

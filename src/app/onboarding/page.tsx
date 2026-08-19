@@ -27,6 +27,8 @@ export default function OnboardingPage() {
   const [personality, setPersonality] = useState(PERSONALITY_PRESETS[0]);
   const [interests, setInterests] = useState<string[]>([]);
   const [customInterest, setCustomInterest] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function toggleInterest(chip: string) {
     setInterests((prev) =>
@@ -42,15 +44,22 @@ export default function OnboardingPage() {
     setCustomInterest("");
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const trimmedName = name.trim() || "Haze";
-    storage.setPersona({
-      id: crypto.randomUUID(),
-      name: trimmedName,
-      personality,
-      interests: interests.length > 0 ? interests : ["일상 대화"],
-    });
-    router.push("/");
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await storage.setPersona({
+        id: crypto.randomUUID(),
+        name: trimmedName,
+        personality,
+        interests: interests.length > 0 ? interests : ["일상 대화"],
+      });
+      router.push("/");
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "저장하지 못했어요. 다시 시도해주세요.");
+      setSaving(false);
+    }
   }
 
   if (step === "teaser") {
@@ -172,11 +181,15 @@ export default function OnboardingPage() {
           </button>
         </div>
 
+        {saveError && (
+          <p className="mb-3 text-sm text-coral-400">{saveError}</p>
+        )}
         <button
           onClick={handleSubmit}
-          className="mt-auto w-full rounded-full bg-mint-500 py-4 text-sm font-semibold text-ink-950 transition hover:bg-mint-600"
+          disabled={saving}
+          className="mt-auto w-full rounded-full bg-mint-500 py-4 text-sm font-semibold text-ink-950 transition hover:bg-mint-600 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          완료
+          {saving ? "저장 중..." : "완료"}
         </button>
       </div>
     </PhoneShell>

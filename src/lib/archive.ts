@@ -3,9 +3,9 @@
 import type { Expression } from "@/lib/types";
 
 /**
- * localStorage-backed "보관" (archive) helpers — bookmarked expressions and
- * bookmarked transcript sentences. Deliberately separate from
- * src/lib/storage.ts (out of scope for this pass); own key, own shape.
+ * Server-backed "보관" (archive) helpers — bookmarked expressions and
+ * bookmarked transcript sentences, via /api/data/archive. Same shapes as
+ * the original localStorage version; now async.
  */
 
 export type BookmarkedExpression = Expression & {
@@ -21,74 +21,48 @@ export type BookmarkedSentence = {
   bookmarkedAt: number;
 };
 
-const KEY = "pe_archive";
-
 type ArchiveData = {
   expressions: BookmarkedExpression[];
   sentences: BookmarkedSentence[];
 };
 
-function read(): ArchiveData {
-  if (typeof window === "undefined") return { expressions: [], sentences: [] };
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    if (!raw) return { expressions: [], sentences: [] };
-    const parsed = JSON.parse(raw) as Partial<ArchiveData>;
-    return {
-      expressions: Array.isArray(parsed.expressions) ? parsed.expressions : [],
-      sentences: Array.isArray(parsed.sentences) ? parsed.sentences : [],
-    };
-  } catch {
-    return { expressions: [], sentences: [] };
+async function fetchArchive(): Promise<ArchiveData> {
+  const res = await fetch("/api/data/archive");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? `archive fetch failed (${res.status})`);
   }
+  return res.json();
 }
 
-function write(data: ArchiveData) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(KEY, JSON.stringify(data));
+async function toggle(body: unknown): Promise<boolean> {
+  const res = await fetch("/api/data/archive", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error ?? `archive toggle failed (${res.status})`);
+  }
+  const data = (await res.json()) as { bookmarked: boolean };
+  return data.bookmarked;
 }
 
 export const archive = {
-  getExpressions(): BookmarkedExpression[] {
-    return read().expressions;
+  async getExpressions(): Promise<BookmarkedExpression[]> {
+    return (await fetchArchive()).expressions;
   },
 
-  getSentences(): BookmarkedSentence[] {
-    return read().sentences;
+  async getSentences(): Promise<BookmarkedSentence[]> {
+    return (await fetchArchive()).sentences;
   },
 
-  isExpressionBookmarked(expressionId: string): boolean {
-    return read().expressions.some((e) => e.id === expressionId);
+  toggleExpression(expression: Expression, reportId: string): Promise<boolean> {
+    return toggle({ kind: "expression", expression, reportId });
   },
 
-  isSentenceBookmarked(sentenceId: string): boolean {
-    return read().sentences.some((s) => s.id === sentenceId);
-  },
-
-  toggleExpression(expression: Expression, reportId: string): boolean {
-    const data = read();
-    const exists = data.expressions.some((e) => e.id === expression.id);
-    if (exists) {
-      data.expressions = data.expressions.filter((e) => e.id !== expression.id);
-    } else {
-      data.expressions = [
-        { ...expression, reportId, bookmarkedAt: Date.now() },
-        ...data.expressions,
-      ];
-    }
-    write(data);
-    return !exists;
-  },
-
-  toggleSentence(sentence: Omit<BookmarkedSentence, "bookmarkedAt">): boolean {
-    const data = read();
-    const exists = data.sentences.some((s) => s.id === sentence.id);
-    if (exists) {
-      data.sentences = data.sentences.filter((s) => s.id !== sentence.id);
-    } else {
-      data.sentences = [{ ...sentence, bookmarkedAt: Date.now() }, ...data.sentences];
-    }
-    write(data);
-    return !exists;
+  toggleSentence(sentence: Omit<BookmarkedSentence, "bookmarkedAt">): Promise<boolean> {
+    return toggle({ kind: "sentence", sentence });
   },
 };

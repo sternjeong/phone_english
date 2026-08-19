@@ -3,56 +3,58 @@
 import { CallSession, Persona, Report } from "./types";
 
 /**
- * MVP has no accounts/DB (see docs/PROJECT_NOTES.md decisions) — everything
- * lives in localStorage. Keep this the single place that touches the key
- * names so screens don't drift.
+ * Server-backed persistence (Postgres via /api/data/**, scoped to the
+ * signed-in user) — replaces the earlier localStorage-only MVP now that the
+ * app has accounts. Same function names/shapes as before, but every call is
+ * now a network request, so callers need a loading state (see
+ * src/lib/useAsync.ts for the shared hook pattern).
  */
-const KEYS = {
-  persona: "pe_persona",
-  sessions: "pe_sessions",
-  reports: "pe_reports",
-  wordStreak: "pe_word_streak", // { [yyyy-mm-dd]: wordsSpoken }
-} as const;
 
-function read<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
+async function getJSON<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? `${url} failed (${res.status})`);
+  }
+  return res.json();
+}
+
+async function postJSON(url: string, body: unknown): Promise<void> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error ?? `${url} failed (${res.status})`);
   }
 }
 
-function write<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
+async function putJSON(url: string, body: unknown): Promise<void> {
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error ?? `${url} failed (${res.status})`);
+  }
 }
 
 export const storage = {
-  getPersona: () => read<Persona | null>(KEYS.persona, null),
-  setPersona: (p: Persona) => write(KEYS.persona, p),
+  getPersona: () => getJSON<Persona | null>("/api/data/persona"),
+  setPersona: (p: Persona) => putJSON("/api/data/persona", p),
 
-  getSessions: () => read<CallSession[]>(KEYS.sessions, []),
-  saveSession: (session: CallSession) => {
-    const sessions = storage.getSessions().filter((s) => s.id !== session.id);
-    sessions.unshift(session);
-    write(KEYS.sessions, sessions);
-  },
+  getSessions: () => getJSON<CallSession[]>("/api/data/sessions"),
+  saveSession: (session: CallSession) => postJSON("/api/data/sessions", session),
 
-  getReports: () => read<Report[]>(KEYS.reports, []),
-  getReport: (id: string) => storage.getReports().find((r) => r.id === id) ?? null,
-  saveReport: (report: Report) => {
-    const reports = storage.getReports().filter((r) => r.id !== report.id);
-    reports.unshift(report);
-    write(KEYS.reports, reports);
-  },
+  getReports: () => getJSON<Report[]>("/api/data/reports"),
+  getReport: (id: string) => getJSON<Report | null>(`/api/data/reports/${id}`),
+  saveReport: (report: Report) => postJSON("/api/data/reports", report),
 
-  getWordStreak: () => read<Record<string, number>>(KEYS.wordStreak, {}),
-  addWords: (count: number, date = new Date().toISOString().slice(0, 10)) => {
-    const streak = storage.getWordStreak();
-    streak[date] = (streak[date] ?? 0) + count;
-    write(KEYS.wordStreak, streak);
-    return streak;
-  },
+  getWordStreak: () => getJSON<Record<string, number>>("/api/data/streak"),
+  addWords: (count: number, date = new Date().toISOString().slice(0, 10)) =>
+    postJSON("/api/data/streak", { words: count, date }),
 };

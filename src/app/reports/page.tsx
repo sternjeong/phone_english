@@ -4,27 +4,28 @@ import Link from "next/link";
 import { useState } from "react";
 import { PhoneShell } from "@/components/ui/PhoneShell";
 import { storage } from "@/lib/storage";
-import { archive, type BookmarkedExpression, type BookmarkedSentence } from "@/lib/archive";
-import { useClientValue } from "@/lib/useClientValue";
-import type { Report } from "@/lib/types";
+import { archive } from "@/lib/archive";
+import { useAsync } from "@/lib/useAsync";
 
 /**
  * SCREEN 03 — report list. Paper (white) tone, unlike most of the app.
  * Tabs: "통화" (call reports) / "보관" (archive of bookmarked expressions &
- * sentences, backed by src/lib/archive.ts's localStorage helpers).
+ * sentences, backed by src/lib/archive.ts's server-backed helpers).
  */
 export default function ReportsPage() {
   const [tab, setTab] = useState<"calls" | "archive">("calls");
   const [archiveTab, setArchiveTab] = useState<"expressions" | "sentences">("expressions");
-  const reports = useClientValue<Report[] | null>(() => storage.getReports(), null);
-  const bookmarkedExpressions = useClientValue<BookmarkedExpression[] | null>(
-    () => archive.getExpressions(),
-    null
-  );
-  const bookmarkedSentences = useClientValue<BookmarkedSentence[] | null>(
-    () => archive.getSentences(),
-    null
-  );
+  const reportsState = useAsync(() => storage.getReports(), []);
+  const expressionsState = useAsync(() => archive.getExpressions(), []);
+  const sentencesState = useAsync(() => archive.getSentences(), []);
+
+  const reports = reportsState.status === "ready" ? reportsState.data : null;
+  const bookmarkedExpressions = expressionsState.status === "ready" ? expressionsState.data : null;
+  const bookmarkedSentences = sentencesState.status === "ready" ? sentencesState.data : null;
+
+  const reportsError = reportsState.status === "error";
+  const expressionsError = expressionsState.status === "error";
+  const sentencesError = sentencesState.status === "error";
 
   return (
     <PhoneShell tone="paper">
@@ -42,7 +43,9 @@ export default function ReportsPage() {
         </div>
 
         {tab === "calls" ? (
-          reports === null ? null : reports.length === 0 ? (
+          reportsError ? (
+            <p className="py-8 text-center text-sm text-paper-600">불러오지 못했어요.</p>
+          ) : reports === null ? null : reports.length === 0 ? (
             <EmptyState
               icon={<DocumentIcon />}
               title="아직 통화 리포트가 없어요"
@@ -85,7 +88,9 @@ export default function ReportsPage() {
               </TabButton>
             </div>
             {archiveTab === "expressions" ? (
-              bookmarkedExpressions === null ? null : bookmarkedExpressions.length === 0 ? (
+              expressionsError ? (
+                <p className="py-8 text-center text-sm text-paper-600">불러오지 못했어요.</p>
+              ) : bookmarkedExpressions === null ? null : bookmarkedExpressions.length === 0 ? (
                 <EmptyState
                   icon={<FolderIcon />}
                   title="아직 저장한 표현이 없어요"
@@ -105,6 +110,8 @@ export default function ReportsPage() {
                   ))}
                 </div>
               )
+            ) : sentencesError ? (
+              <p className="py-8 text-center text-sm text-paper-600">불러오지 못했어요.</p>
             ) : bookmarkedSentences === null ? null : bookmarkedSentences.length === 0 ? (
               <EmptyState
                 icon={<FolderIcon />}

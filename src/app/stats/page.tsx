@@ -2,8 +2,7 @@
 
 import { PhoneShell } from "@/components/ui/PhoneShell";
 import { storage } from "@/lib/storage";
-import { useClientValue } from "@/lib/useClientValue";
-import type { CallSession } from "@/lib/types";
+import { useAsync } from "@/lib/useAsync";
 
 const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -12,8 +11,21 @@ const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
  * See docs/PROJECT_NOTES.md "학습 — 발화 기록 화면".
  */
 export default function StatsPage() {
-  const streak = useClientValue<Record<string, number>>(() => storage.getWordStreak(), {});
-  const sessions = useClientValue<CallSession[]>(() => storage.getSessions(), []);
+  const streakState = useAsync(() => storage.getWordStreak(), []);
+  const sessionsState = useAsync(() => storage.getSessions(), []);
+
+  if (streakState.status === "error" || sessionsState.status === "error") {
+    return (
+      <PhoneShell tone="paper">
+        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <p className="text-sm text-paper-600">불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        </div>
+      </PhoneShell>
+    );
+  }
+
+  const streak = streakState.status === "ready" ? streakState.data : {};
+  const sessions = sessionsState.status === "ready" ? sessionsState.data : [];
 
   const totalWords = Object.values(streak).reduce((sum, n) => sum + n, 0);
 

@@ -246,7 +246,38 @@
 - **실제 라이브 키로 전체 루프 검증**: 홈 → 온보딩(페르소나 생성) → `/call` 수신 → 받기 → 실제 Gemini가 생성한 인사말이 타이핑 애니메이션으로 스트리밍됨 → 종료 → 실제 Gemini가 생성한 리포트("짧은 인사로 끝난 통화" 제목 + 원어민 표현 "Are you free to talk?" 등)로 정상 이동 → 리포트/통계/일정 화면 전부 스크린샷으로 확인. 수정 후 콘솔 에러 0건.
 - git 커밋 2개 추가 push: 브랜딩/모델 수정 + 이 버그 수정.
 
+## 7차 갱신 (2026-08-19) — 계정/DB/배포 전환
+사용자 요청: "streamlit처럼 사이트 주소만 있으면 늘 접근 가능하게" + "로그인 서비스를 만들어서 접근할 때마다 초기화되지 않고 로그가 쌓이도록". MVP 단계에서 명시적으로 미룬 "계정/결제 없음, localStorage만" 결정을 뒤집는 변경.
+
+### 결정 사항 (7차)
+- **배포**: Vercel (Next.js 네이티브 지원, GitHub 연동)
+- **로그인**: Google 로그인만 (NextAuth v5 / Auth.js), JWT 세션 전략 — 별도 auth DB 어댑터 없이 사용자의 Google 이메일을 안정적인 사용자 키로 사용
+- **DB**: Vercel Postgres (실제로는 Neon 기반 — `@vercel/postgres`가 deprecated라서 범용 `postgres`(postgres.js) 패키지로 연결, `POSTGRES_URL` 환경변수 사용)
+- **인증 범위**: 앱 전체를 로그인 필수로 전환 (`src/middleware.ts`) — 더 이상 비로그인 사용 불가. 개인용 서비스로 성격이 바�뀜.
+
+### 아키텍처 변경
+- `src/lib/storage.ts`, `src/lib/archive.ts`: localStorage 동기 함수 → `/api/data/**` 호출하는 **비동기** 함수로 전면 재작성 (함수 이름/시그니처는 최대한 유지, 반환 타입만 Promise로 변경)
+- 새 API 라우트: `/api/data/persona`, `/api/data/sessions`, `/api/data/reports`, `/api/data/reports/[id]`, `/api/data/streak`, `/api/data/archive` — 전부 `src/lib/apiAuth.ts`의 `requireUser()`로 세션 검증 후 `user_id`(=이메일) 기준으로 스코프
+- `src/lib/db.ts`: Postgres 커넥션 + 스키마 자동 생성(`ensureSchema`, `CREATE TABLE IF NOT EXISTS`) — personas/call_sessions/reports/word_streak/archive_expressions/archive_sentences 6개 테이블, 대부분 JSONB 컬럼에 기존 타입을 그대로 저장(스키마 마이그레이션 부담 최소화)
+- `src/lib/auth.ts`: NextAuth 설정 (Google 프로바이더), `src/app/api/auth/[...nextauth]/route.ts`에 마운트
+- `src/app/sign-in/page.tsx`: 로그인 화면, `src/middleware.ts`: 비로그인 접근 시 리다이렉트
+- `src/components/ui/UserMenu.tsx`: 홈 화면 우측 상단 아바타 → 클릭 시 이름/이메일 + 로그아웃
+- `src/lib/useAsync.ts`: 기존 `useClientValue`(useSyncExternalStore, localStorage 전용)를 대체하는 진짜 비동기 데이터 훅 — 화면단 로딩/에러 상태 처리용. `useClientValue`는 순수 로컬 UI 상태(예: 일정 화면의 선호 시간)에만 남아있음
+- 3개 에이전트 병렬로 각 화면(홈/온보딩, 통화, 리포트+통계+연습)을 새 비동기 계약에 맞춰 마이그레이션 완료 → 통합 검증(`tsc`/`eslint`/`next build`) 전부 클린
+
+### 마이그레이션 중 발견한 실제 버그 2건 (둘 다 실행 검증으로 발견, 수정 완료)
+1. **`useAsync` 훅이 렌더 중 ref를 변경**(`fnRef.current = fn`) — React Compiler가 `Cannot access refs during render`로 차단. `fn`을 ref에 담아 "항상 최신 fn 사용" 패턴 대신, effect가 실행되는 시점의 클로저를 그대로 쓰도록 단순화해서 해결(`deps`/`reload()`의 `tick`이 재요청 시점을 통제하므로 `fn` 자체를 deps에 안 넣어도 안전).
+2. **로그인 게이트가 실제로는 동작하지 않음**: `export { auth as proxy } from "@/lib/auth"`만으로는 `req.auth`를 채워줄 뿐 비로그인 요청을 리다이렉트하지 않는다는 걸 실제 `curl` 테스트로 발견(비로그인 상태로 `/`에 접속했는데 200 OK가 옴 — 정적 검사로는 절대 못 잡음). NextAuth v5의 `callbacks.authorized`를 추가해야 Proxy에서 실제 리다이렉트가 동작함을 확인 후 수정 → 재검증: 비로그인 `/` 요청은 307 → `/sign-in`, `/api/data/persona`는 401.
+3. **Next.js 16 `middleware.ts` deprecation**: 빌드 시 "middleware 파일 컨벤션은 deprecated, proxy 사용" 경고 발견 → `node_modules/next/dist/docs/.../proxy.md` 확인 후 `src/middleware.ts` → `src/proxy.ts`로 이름 변경, export도 `proxy`로 변경 (AGENTS.md가 경고했던 "이 Next.js는 아는 Next.js가 아니다" 케이스 그대로).
+
+### 사용자가 직접 해야 하는 것 (외부 계정이라 내가 대신할 수 없음)
+1. **Google OAuth 클라이언트 생성**: [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth 클라이언트 ID 생성 → 승인된 리디렉션 URI에 `<배포주소>/api/auth/callback/google` (로컬 테스트는 `http://localhost:3000/api/auth/callback/google`) 등록 → Client ID/Secret을 `.env.local`(로컬)과 Vercel 환경변수(배포)에 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`으로 등록
+2. **Vercel 프로젝트 연결**: Vercel 계정에서 이 GitHub 레포(`sternjeong/phone_english`) import → Storage 탭에서 Postgres 추가(=Neon) → 자동으로 `POSTGRES_URL` 등 환경변수 주입됨
+3. **AUTH_SECRET**: `npx auth secret`으로 생성하거나 아무 랜덤 문자열, Vercel 환경변수에도 등록
+4. **GEMINI_API_KEY**: 기존과 동일하게 Vercel 환경변수에도 등록 필요 (로컬 `.env.local`에만 있으면 배포본에서는 501)
+
 ## 요구사항 (Requirements)
 - MVP 기능 범위는 위 "MVP 기능 범위 (확정)" 섹션 참고
 - 코드 작성 시 이 문서의 "결정 사항"과 "아키텍처 초안"을 항상 우선 참고할 것
 - 실제 코드 구조는 "구현 현황" 섹션 및 `src/` 디렉토리 참고
+- **7차 갱신부터는 계정/DB 전환이 최신 아키텍처** — "MVP 기능 범위"/"아키텍처 초안" 섹션의 "로그인/결제 없음, localStorage만" 문구는 7차 갱신으로 대체됨

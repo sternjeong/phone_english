@@ -7,8 +7,8 @@ import { PhoneShell } from "@/components/ui/PhoneShell";
 import { Pill } from "@/components/ui/Pill";
 import { ScoreGauge } from "@/components/ui/ScoreGauge";
 import { storage } from "@/lib/storage";
-import { archive } from "@/lib/archive";
-import { useClientValue } from "@/lib/useClientValue";
+import { archive, type BookmarkedExpression, type BookmarkedSentence } from "@/lib/archive";
+import { useAsync } from "@/lib/useAsync";
 import type { ChatMessage, Report } from "@/lib/types";
 
 /**
@@ -18,22 +18,29 @@ import type { ChatMessage, Report } from "@/lib/types";
 export default function ReportDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const storedReport = useClientValue<Report | null>(
-    () => storage.getReport(params.id),
-    null
-  );
+  const reportState = useAsync(() => storage.getReport(params.id), [params.id]);
+  const storedReport = reportState.status === "ready" ? reportState.data : null;
   // A local override lets "복습하기" update the screen immediately without
-  // waiting on another storage read (localStorage has no change events).
+  // waiting on another network round-trip.
   const [override, setOverride] = useState<Report | null>(null);
   const report = override ?? storedReport;
 
-  const session = useClientValue(
-    () => (report ? storage.getSessions().find((s) => s.id === report.callSessionId) ?? null : null),
-    null
-  );
+  const sessionsState = useAsync(() => storage.getSessions(), []);
+  const session =
+    sessionsState.status === "ready" && report
+      ? sessionsState.data.find((s) => s.id === report.callSessionId) ?? null
+      : null;
+
+  const expressionsState = useAsync(() => archive.getExpressions(), []);
+  const sentencesState = useAsync(() => archive.getSentences(), []);
+  const bookmarkedExpressions: BookmarkedExpression[] =
+    expressionsState.status === "ready" ? expressionsState.data : [];
+  const bookmarkedSentences: BookmarkedSentence[] =
+    sentencesState.status === "ready" ? sentencesState.data : [];
+
   const [exprIndex, setExprIndex] = useState(0);
 
-  function handleReview() {
+  async function handleReview() {
     if (!report) return;
     const reviewed: Report = {
       ...report,
@@ -42,11 +49,27 @@ export default function ReportDetailPage() {
       prosody: report.prosody ?? randomScore(),
       fluency: report.fluency ?? randomScore(),
     };
-    storage.saveReport(reviewed);
+    await storage.saveReport(reviewed);
     setOverride(reviewed);
   }
 
+  if (reportState.status === "error") {
+    return (
+      <PhoneShell tone="ink">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+          <p className="text-ink-100">불러오지 못했어요</p>
+          <Link href="/reports" className="text-sm text-mint-500 underline">
+            리포트 목록으로
+          </Link>
+        </div>
+      </PhoneShell>
+    );
+  }
+
   if (report === null) {
+    if (reportState.status === "loading") {
+      return <PhoneShell tone="ink">{null}</PhoneShell>;
+    }
     return (
       <PhoneShell tone="ink">
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
@@ -118,6 +141,8 @@ export default function ReportDetailPage() {
                 expression={expr}
                 index={exprIndex}
                 total={report.expressions.length}
+                bookmarked={bookmarkedExpressions.some((e) => e.id === expr.id)}
+                onToggled={expressionsState.reload}
                 onPrev={() => setExprIndex((i) => Math.max(0, i - 1))}
                 onNext={() =>
                   setExprIndex((i) => Math.min(report.expressions.length - 1, i + 1))
@@ -131,7 +156,13 @@ export default function ReportDetailPage() {
             {session ? (
               <div className="flex flex-col gap-3">
                 {session.messages.map((m) => (
-                  <TranscriptBubble key={m.id} message={m} reportId={report.id} />
+                  <TranscriptBubble
+                    key={m.id}
+                    message={m}
+                    reportId={report.id}
+                    bookmarked={bookmarkedSentences.some((s) => s.id === `${report.id}:${m.id}`)}
+                    onToggled={sentencesState.reload}
+                  />
                 ))}
               </div>
             ) : (
@@ -181,6 +212,8 @@ function ExpressionCard({
   expression,
   index,
   total,
+  bookmarked,
+  onToggled,
   onPrev,
   onNext,
 }: {
@@ -188,22 +221,34 @@ function ExpressionCard({
   expression: Report["expressions"][number];
   index: number;
   total: number;
+  bookmarked: boolean;
+  onToggled: () => void;
   onPrev: () => void;
   onNext: () => void;
 }) {
-  const [bookmarked, setBookmarked] = useState(() => archive.isExpressionBookmarked(expression.id));
-  // Reset `bookmarked` when the carousel moves to a different expression.
-  // Adjusting state during render (rather than in an effect) per
+  const [pending, setPending] = useState(false);
+  const [localBookmarked, setLocalBookmarked] = useState<boolean | null>(null);
+  // Reset the optimistic local override whenever the carousel moves to a
+  // different expression, so it doesn't leak across cards. Adjusting state
+  // during render (rather than in an effect) per
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
   const [trackedId, setTrackedId] = useState(expression.id);
   if (trackedId !== expression.id) {
     setTrackedId(expression.id);
-    setBookmarked(archive.isExpressionBookmarked(expression.id));
+    setLocalBookmarked(null);
   }
+  const isBookmarked = localBookmarked ?? bookmarked;
 
-  function toggleBookmark() {
-    const nowBookmarked = archive.toggleExpression(expression, reportId);
-    setBookmarked(nowBookmarked);
+  async function toggleBookmark() {
+    if (pending) return;
+    setPending(true);
+    try {
+      const nowBookmarked = await archive.toggleExpression(expression, reportId);
+      setLocalBookmarked(nowBookmarked);
+      onToggled();
+    } finally {
+      setPending(false);
+    }
   }
 
   const parts = useMemo(() => {
@@ -227,9 +272,9 @@ function ExpressionCard({
         <div className="flex items-center gap-2">
           <button
             onClick={toggleBookmark}
-            aria-label={bookmarked ? "저장 취소" : "저장"}
-            aria-pressed={bookmarked}
-            className={`text-sm transition ${bookmarked ? "text-mint-500" : "text-ink-400 hover:text-ink-100"}`}
+            aria-label={isBookmarked ? "저장 취소" : "저장"}
+            aria-pressed={isBookmarked}
+            className={`text-sm transition ${isBookmarked ? "text-mint-500" : "text-ink-400 hover:text-ink-100"}`}
           >
             🔖
           </button>
@@ -276,20 +321,39 @@ function ExpressionCard({
   );
 }
 
-function TranscriptBubble({ message, reportId }: { message: ChatMessage; reportId: string }) {
+function TranscriptBubble({
+  message,
+  reportId,
+  bookmarked,
+  onToggled,
+}: {
+  message: ChatMessage;
+  reportId: string;
+  bookmarked: boolean;
+  onToggled: () => void;
+}) {
   const [showKo, setShowKo] = useState(true);
   const isUser = message.role === "user";
   const sentenceId = `${reportId}:${message.id}`;
-  const [bookmarked, setBookmarked] = useState(() => archive.isSentenceBookmarked(sentenceId));
+  const [pending, setPending] = useState(false);
+  const [localBookmarked, setLocalBookmarked] = useState<boolean | null>(null);
+  const isBookmarked = localBookmarked ?? bookmarked;
 
-  function toggleBookmark() {
-    const nowBookmarked = archive.toggleSentence({
-      id: sentenceId,
-      reportId,
-      textEn: message.textEn,
-      textKo: message.textKo,
-    });
-    setBookmarked(nowBookmarked);
+  async function toggleBookmark() {
+    if (pending) return;
+    setPending(true);
+    try {
+      const nowBookmarked = await archive.toggleSentence({
+        id: sentenceId,
+        reportId,
+        textEn: message.textEn,
+        textKo: message.textKo,
+      });
+      setLocalBookmarked(nowBookmarked);
+      onToggled();
+    } finally {
+      setPending(false);
+    }
   }
 
   function speak() {
@@ -333,9 +397,9 @@ function TranscriptBubble({ message, reportId }: { message: ChatMessage; reportI
             </span>
             <button
               onClick={toggleBookmark}
-              aria-label={bookmarked ? "저장 취소" : "저장"}
-              aria-pressed={bookmarked}
-              className={`transition ${bookmarked ? "text-mint-500" : "hover:text-ink-100"}`}
+              aria-label={isBookmarked ? "저장 취소" : "저장"}
+              aria-pressed={isBookmarked}
+              className={`transition ${isBookmarked ? "text-mint-500" : "hover:text-ink-100"}`}
             >
               🔖
             </button>
