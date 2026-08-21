@@ -404,6 +404,7 @@
     <a href="#live-verify">실행 검증</a>
     <a href="#accounts">계정/DB/배포</a>
     <a href="#live">배포 완료</a>
+    <a href="#ux-feedback">사용성 피드백</a>
     <a href="#requirements">요구사항</a>
   </nav>
 
@@ -851,8 +852,20 @@
       </div>
     </section>
 
+    <section id="ux-feedback">
+      <div class="eyebrow">17 · UX Feedback</div>
+      <h2>사용성 피드백 4건 반영 (2026-08-21)</h2>
+      <div class="callout-stack" style="margin-bottom:1.4rem;">
+        <div class="callout decision"><span class="tag">속도</span><div class="body">Gemini가 매 응답마다 내부 "생각" 단계로 지연 발생 → 공식 <code>thinkingBudget</code> 필드는 이 모델에서 400 에러, <code>curl</code>로 직접 프로빙해 <code>thinkingConfig.thinkingLevel: "MINIMAL"</code>이 실제로 먹히고 생각 토큰을 0으로 만드는 걸 확인 후 적용.</div></div>
+        <div class="callout decision"><span class="tag">여성 목소리</span><div class="body">신규 <code>src/lib/tts.ts</code> — 브라우저 음성 목록에서 젊은 여성 목소리를 휴리스틱으로 선택, pitch/rate 조정. 통화·리포트 재생·섀도잉 연습 전부 통일. 클라우드 TTS는 속도 목표와 상충돼 채택 안 함.</div></div>
+        <div class="callout decision"><span class="tag">마이크 토글</span><div class="body">누르고 있는 동안만 녹음 → 탭해서 시작, 다시 탭해서 종료+전송 방식으로 변경. Playwright로 토글 확인.</div></div>
+        <div class="callout decision"><span class="tag">통화 5분+연장</span><div class="body">기본 5분 후 "3분 더 통화할까요?" 오버레이 → 수락 시 3분 연장, 거절 시 종료. 통화 시계는 받은 시점부터 재도록 수정.</div></div>
+      </div>
+      <div class="callout question"><span class="tag">⚠️ 중요 발견</span><div class="body">속도 테스트용 <code>curl</code> 프로빙 중 <strong>Gemini 무료 티어 일일 한도(하루 20회/모델)를 소진</strong> — 실사용 시 통화 한 번에 여러 턴+리포트 생성이 필요해 하루 20회는 부족할 수 있음(통화 3~4번이면 소진). 유료 전환 여부는 아직 미정, 사용자 확인 필요.</div></div>
+    </section>
+
     <section id="requirements">
-      <div class="eyebrow">17 · Requirements</div>
+      <div class="eyebrow">18 · Requirements</div>
       <h2>요구사항</h2>
       <div class="card">
         <ul class="plain">
