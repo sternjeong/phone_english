@@ -378,7 +378,7 @@
     <h1>Good Morning <span style="color:var(--text-muted); font-weight:500;">(구 phone_english)</span></h1>
     <p class="tagline">헤이링(HeyRing)을 레퍼런스로 삼은 AI 전화영어 클론 프로젝트 — 대화를 통해 기획을 구체화하며 쌓아가는 기록. 코드를 작성할 때 이 문서를 항상 먼저 참고한다.</p>
     <div class="meta-row">
-      <span class="chip accent">단계: MVP 구현 완료 · 라이브 키 검증 완료</span>
+      <span class="chip accent">단계: 배포 완료, 실사용 가능</span>
       <span class="chip">레퍼런스: 헤이링(HeyRing)</span>
       <span class="chip">스택: Next.js · TypeScript · Gemini 3.6 Flash · Web Speech API</span>
       <span class="chip">최종 업데이트: 2026-08-17</span>
@@ -403,6 +403,7 @@
     <a href="#progress">진행 메모</a>
     <a href="#live-verify">실행 검증</a>
     <a href="#accounts">계정/DB/배포</a>
+    <a href="#live">배포 완료</a>
     <a href="#requirements">요구사항</a>
   </nav>
 
@@ -837,8 +838,21 @@
       </ol>
     </section>
 
+    <section id="live">
+      <div class="eyebrow">16 · Live</div>
+      <h2>배포 완료 (2026-08-21)</h2>
+      <blockquote>
+        <a href="https://phone-english-beta.vercel.app" target="_blank" rel="noopener">phone-english-beta.vercel.app</a>
+        <span class="cite">Vercel + Prisma Postgres — 로그인만 하면 어디서든 같은 데이터로 접속됨</span>
+      </blockquote>
+      <div class="callout-stack">
+        <div class="callout decision"><span class="tag">DB 연결 이슈 해결</span><div class="body">Prisma Postgres가 <code>DATABASE_URL</code>을 <code>prisma+postgres://</code>(Accelerate 프로토콜)로 주입해 일반 <code>postgres</code> 패키지가 못 읽는 문제 발견 → <code>POSTGRES_URL</code>/<code>POSTGRES_URL_NON_POOLING</code>/<code>DATABASE_URL</code> 중 실제 <code>postgres://</code> 값을 찾아 쓰도록 수정.</div></div>
+        <div class="callout decision"><span class="tag">라이브 종단 검증</span><div class="body">Playwright로 실제 배포본 테스트: 로그인 → 온보딩(페르소나 "Haze" 생성) → <strong>완전히 새 브라우저 세션(쿠키 없음)으로 재접속해도 동일 데이터 유지</strong> 확인. 콘솔 에러 0건.</div></div>
+      </div>
+    </section>
+
     <section id="requirements">
-      <div class="eyebrow">16 · Requirements</div>
+      <div class="eyebrow">17 · Requirements</div>
       <h2>요구사항</h2>
       <div class="card">
         <ul class="plain">

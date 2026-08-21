@@ -287,6 +287,13 @@
 - `.env.local.example`: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` 제거, `AUTH_PASSCODE` 추가.
 - **라이브 검증 완료**: Playwright로 로그인 플로우 직접 테스트 — 틀린 비밀번호 → 에러 메시지 표시, 맞는 비밀번호 → 홈 화면 이동 확인. (홈 화면의 "정보를 불러오지 못했어요"는 `POSTGRES_URL`이 아직 없어서 발생하는 것으로, DB 미설정 시의 정상적인 폴백 동작 — 버그 아님)
 
+## 9차 갱신 (2026-08-21) — 실제 배포 완료 및 라이브 검증
+사용자가 Vercel에 배포하고 Postgres(Prisma Postgres 마켓플레이스 애드온)까지 연결 완료. **배포 주소: https://phone-english-beta.vercel.app**
+
+- Prisma Postgres는 `DATABASE_URL`을 `prisma+postgres://`(Accelerate 프로토콜)로 주입해서 일반 `postgres` 패키지가 못 읽는 문제 발견 → `src/lib/db.ts`가 `POSTGRES_URL`/`POSTGRES_URL_NON_POOLING`/`DATABASE_URL` 중 실제 `postgres://`로 시작하는 값을 찾아 쓰도록 수정
+- Playwright로 라이브 배포본 종단 검증: 로그인 → 온보딩(페르소나 "Haze" 생성) → 홈 화면 반영 확인 → **완전히 새로운 브라우저 세션(쿠키 없음)으로 재접속해도 동일 데이터 유지** 확인 — "접근할 때마다 초기화 안 되고 로그가 쌓이는" 원래 요구사항 충족 확인
+- 콘솔 에러 0건
+
 ## 요구사항 (Requirements)
 - MVP 기능 범위는 위 "MVP 기능 범위 (확정)" 섹션 참고
 - 코드 작성 시 이 문서의 "결정 사항"과 "아키텍처 초안"을 항상 우선 참고할 것
