@@ -1,10 +1,15 @@
 import postgres from "postgres";
 
 /**
- * Vercel Postgres (Neon-backed) connection. Works with any of the env vars
- * Vercel auto-injects once you provision Postgres and link the project —
- * we read `POSTGRES_URL`; see .env.local.example for local dev.
- * Server-side only: never import from a client component.
+ * Postgres connection. Vercel's Storage integrations (classic Vercel
+ * Postgres/Neon, or the newer Prisma Postgres marketplace add-on) don't
+ * all inject the same env var name — Prisma Postgres in particular sets
+ * `DATABASE_URL` to a `prisma+postgres://` Accelerate URL that a plain
+ * postgres.js client can't speak, alongside a real `POSTGRES_URL` that
+ * it can. So: prefer `POSTGRES_URL`, and only fall back to `DATABASE_URL`
+ * if it's an actual postgres:// URL (skip it otherwise instead of
+ * crashing on an unsupported protocol). See .env.local.example for local
+ * dev. Server-side only: never import from a client component.
  */
 declare global {
   var __pgClient: ReturnType<typeof postgres> | undefined;
@@ -12,12 +17,21 @@ declare global {
 
 export class DbConfigError extends Error {}
 
+function resolveConnectionString(): string | undefined {
+  const candidates = [
+    process.env.POSTGRES_URL,
+    process.env.POSTGRES_URL_NON_POOLING,
+    process.env.DATABASE_URL,
+  ];
+  return candidates.find((url) => url && /^postgres(ql)?:\/\//.test(url));
+}
+
 /** Lazily creates (and reuses, across hot-reloads/lambda invocations) the connection. */
 export function db() {
-  const url = process.env.POSTGRES_URL;
+  const url = resolveConnectionString();
   if (!url) {
     throw new DbConfigError(
-      "POSTGRES_URL is not set. Add it to .env.local (see docs/PROJECT_NOTES.md)."
+      "No usable Postgres connection string found (checked POSTGRES_URL, POSTGRES_URL_NON_POOLING, DATABASE_URL). Add one to .env.local (see docs/PROJECT_NOTES.md)."
     );
   }
   if (!global.__pgClient) {
