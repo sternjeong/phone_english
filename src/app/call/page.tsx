@@ -9,7 +9,11 @@ import { useSpeechToText } from "@/components/call/useSpeechToText";
 import { storage } from "@/lib/storage";
 import { useClientValue } from "@/lib/useClientValue";
 import { useAsync } from "@/lib/useAsync";
+import { speakText } from "@/lib/tts";
 import type { ChatMessage, Persona, Topic, CallSession, Report } from "@/lib/types";
+
+const DEFAULT_CALL_SECONDS = 5 * 60;
+const EXTEND_SECONDS = 3 * 60;
 
 const DEFAULT_PERSONA: Persona = {
   id: "default",
@@ -33,18 +37,6 @@ function newId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function speak(text: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  try {
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "en-US";
-    window.speechSynthesis.speak(utter);
-  } catch {
-    // best-effort — TTS failure shouldn't break the call flow
-  }
 }
 
 async function callConverse(body: {
@@ -88,6 +80,11 @@ export default function CallPage() {
   const [elapsed, setElapsed] = useState(0);
   const [summary, setSummary] = useState<{ wordCount: number; reportId: string } | null>(null);
 
+  // 기본 통화 시간 5분, "더 통화할까요?" 프롬프트에서 예 누르면 3분씩 연장.
+  const [timeLimit, setTimeLimit] = useState(DEFAULT_CALL_SECONDS);
+  const [extendPromptOpen, setExtendPromptOpen] = useState(false);
+  const extendPromptShownFor = useRef(0);
+
   // Date.now() is impure, so it can't be called during render (even guarded)
   // — capture the call's start time as a mount effect instead.
   const callStartRef = useRef<number>(0);
@@ -121,6 +118,18 @@ export default function CallPage() {
     return () => clearInterval(id);
   }, [phase]);
 
+  // 기본 통화 5분이 지나면 "더 통화할까요?" 오버레이를 띄운다. 한 번 물어본
+  // 한도(extendPromptShownFor)는 다시 안 묻도록 기록해둔다 — setInterval이
+  // 초 단위로 계속 도는 동안 elapsed가 timeLimit을 넘긴 매 틱마다 다시
+  // 열리는 걸 막기 위함.
+  useEffect(() => {
+    if (phase !== "active") return;
+    if (elapsed >= timeLimit && extendPromptShownFor.current !== timeLimit) {
+      extendPromptShownFor.current = timeLimit;
+      setExtendPromptOpen(true);
+    }
+  }, [elapsed, timeLimit, phase]);
+
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const ss = String(elapsed % 60).padStart(2, "0");
 
@@ -144,7 +153,7 @@ export default function CallPage() {
       };
       setMessages([aiMsg]);
       setTypingId(aiMsg.id);
-      speak(aiMsg.textEn);
+      speakText(aiMsg.textEn);
     } catch (err) {
       setGreetingError(err instanceof Error ? err.message : "AI 응답을 가져오지 못했어요");
     } finally {
@@ -167,11 +176,25 @@ export default function CallPage() {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(HINT_SEEN_KEY, "1");
     }
+    // "5분 통화"는 받은 시점부터 재는 게 맞으므로, 수신 화면에 머문 시간은
+    // 제외하고 여기서 시계를 다시 0으로 맞춘다.
+    callStartRef.current = Date.now();
+    setElapsed(0);
     setPhase("active");
   };
 
   const declineCall = () => {
     router.push("/");
+  };
+
+  const handleExtend = () => {
+    setTimeLimit((t) => t + EXTEND_SECONDS);
+    setExtendPromptOpen(false);
+  };
+
+  const handleDeclineExtend = () => {
+    setExtendPromptOpen(false);
+    endCall();
   };
 
   // Send one user utterance through the converse loop.
@@ -210,7 +233,7 @@ export default function CallPage() {
           aiMsg,
         ]);
         setTypingId(aiMsg.id);
-        speak(aiMsg.textEn);
+        speakText(aiMsg.textEn);
       } catch (err) {
         setConvoError({
           userMsgId: userMsg.id,
@@ -233,17 +256,18 @@ export default function CallPage() {
     sendUtterance(convoError.utterance, convoError.history);
   };
 
-  // Push-to-talk handlers.
+  // 탭-토글 방식: 한 번 누르면 녹음 시작, 다시 누르면 녹음 종료 후 전송.
+  // (기존엔 누르고 있는 동안만 녹음되는 방식이라 불편하다는 피드백 반영)
   const historyBeforeNext = useMemo(() => messages, [messages]);
 
-  const handleMicDown = () => {
+  const handleMicToggle = async () => {
     if (!sttSupported || pendingUserId) return;
+    if (listening) {
+      const transcript = await stop();
+      if (transcript) sendUtterance(transcript, historyBeforeNext);
+      return;
+    }
     start();
-  };
-  const handleMicUp = async () => {
-    if (!sttSupported) return;
-    const transcript = await stop();
-    if (transcript) sendUtterance(transcript, historyBeforeNext);
   };
 
   const handleTextSubmit = () => {
@@ -470,16 +494,12 @@ export default function CallPage() {
                     📴
                   </button>
                   <button
-                    onMouseDown={handleMicDown}
-                    onMouseUp={handleMicUp}
-                    onMouseLeave={() => listening && handleMicUp()}
-                    onTouchStart={handleMicDown}
-                    onTouchEnd={handleMicUp}
+                    onClick={handleMicToggle}
                     disabled={!sttSupported || !!pendingUserId}
-                    className={`flex h-14 w-14 items-center justify-center rounded-full text-xl text-white shadow-lg disabled:opacity-40 ${
-                      listening ? "bg-mint-500" : "bg-ink-700"
+                    className={`flex h-14 w-14 items-center justify-center rounded-full text-xl text-white shadow-lg transition disabled:opacity-40 ${
+                      listening ? "animate-pulse bg-mint-500" : "bg-ink-700"
                     }`}
-                    aria-label="말하기"
+                    aria-label={listening ? "말하기 종료" : "말하기 시작"}
                   >
                     🎤
                   </button>
@@ -491,8 +511,14 @@ export default function CallPage() {
                     🔘
                   </button>
                 </div>
-                {pendingUserId && (
-                  <div className="text-center text-xs text-ink-400">응답을 기다리는 중…</div>
+                {listening ? (
+                  <div className="text-center text-xs text-mint-500">
+                    듣고 있어요… 다시 누르면 전송돼요
+                  </div>
+                ) : (
+                  pendingUserId && (
+                    <div className="text-center text-xs text-ink-400">응답을 기다리는 중…</div>
+                  )
                 )}
               </div>
             )}
@@ -507,6 +533,33 @@ export default function CallPage() {
               }}
               onClose={() => setTopicDialOpen(false)}
             />
+          )}
+
+          {extendPromptOpen && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 px-8">
+              <div className="w-full max-w-xs rounded-2xl border border-ink-700 bg-ink-900 p-6 text-center">
+                <p className="mb-1 text-base font-semibold text-ink-100">
+                  {Math.floor(timeLimit / 60)}분이 지났어요
+                </p>
+                <p className="mb-5 text-sm text-ink-400">
+                  {Math.floor(EXTEND_SECONDS / 60)}분 더 통화할까요?
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleDeclineExtend}
+                    className="flex-1 rounded-full border border-ink-700 py-2.5 text-sm font-medium text-ink-100 transition hover:border-coral-400 hover:text-coral-400"
+                  >
+                    종료할게요
+                  </button>
+                  <button
+                    onClick={handleExtend}
+                    className="flex-1 rounded-full bg-mint-500 py-2.5 text-sm font-semibold text-ink-950 transition hover:bg-mint-600"
+                  >
+                    더 할래요
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}

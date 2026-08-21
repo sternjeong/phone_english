@@ -7,6 +7,7 @@ import { ScoreGauge } from "@/components/ui/ScoreGauge";
 import { storage } from "@/lib/storage";
 import { useAsync } from "@/lib/useAsync";
 import { useSpeechToText } from "@/components/call/useSpeechToText";
+import { speakText } from "@/lib/tts";
 import type { Expression, PracticeAttempt, WordScore } from "@/lib/types";
 
 /**
@@ -138,10 +139,7 @@ export default function ShadowingPracticePage() {
   }
 
   function speak(text: string) {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "en-US";
-    window.speechSynthesis.speak(utter);
+    speakText(text);
   }
 
   async function toggleRecording() {

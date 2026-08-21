@@ -9,6 +9,7 @@ import { ScoreGauge } from "@/components/ui/ScoreGauge";
 import { storage } from "@/lib/storage";
 import { archive, type BookmarkedExpression, type BookmarkedSentence } from "@/lib/archive";
 import { useAsync } from "@/lib/useAsync";
+import { speakText } from "@/lib/tts";
 import type { ChatMessage, Report } from "@/lib/types";
 
 /**
@@ -357,10 +358,7 @@ function TranscriptBubble({
   }
 
   function speak() {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    const utter = new SpeechSynthesisUtterance(message.textEn);
-    utter.lang = "en-US";
-    window.speechSynthesis.speak(utter);
+    speakText(message.textEn);
   }
 
   return (

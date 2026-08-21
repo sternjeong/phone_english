@@ -36,6 +36,20 @@ export async function chatJSON<T>(systemPrompt: string, history: ChatTurn[]): Pr
       generationConfig: {
         temperature: 0.8,
         responseMimeType: "application/json",
+        // Flash models spend a chunk of latency on an internal "thinking"
+        // pass by default (confirmed via raw curl tests: 100-180+ thinking
+        // tokens for a one-word reply) — this app needs quick back-and-forth
+        // small talk, not reasoning, so turn it down as far as it goes.
+        // NOTE: `thinkingConfig.thinkingBudget` (the documented Gemini 2.x
+        // knob) returns 400 INVALID_ARGUMENT on this model — empirically
+        // probed via curl and found `thinkingConfig.thinkingLevel` instead,
+        // which only accepts "MINIMAL"/"LOW" (not "OFF"/"NONE"). MINIMAL
+        // confirmed via curl to drop thoughtsTokenCount to 0 entirely.
+        thinkingConfig: { thinkingLevel: "MINIMAL" },
+        // Replies are meant to be 1-3 short sentences — a small ceiling
+        // stops the model from ever generating (and us waiting on) a long
+        // tail response.
+        maxOutputTokens: 400,
       },
     }),
   });
