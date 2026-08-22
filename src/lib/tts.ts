@@ -106,6 +106,32 @@ export function preloadVoice() {
   void getFemaleVoice();
 }
 
+let unlocked = false;
+
+/**
+ * iOS Safari is stricter than desktop browsers about *when* it's allowed to
+ * speak at all: `speechSynthesis.speak()` only works reliably if it's been
+ * called at least once directly inside a user gesture's event handler (tap/
+ * click) — every subsequent call, even from an async context (like a
+ * network response arriving), then works for the rest of the page's
+ * lifetime. Without this "unlock", speak() silently does nothing on iOS —
+ * confirmed by a user report: worked on desktop, dead silent on iPhone
+ * Safari. Call this synchronously inside the "받기" (answer call) button's
+ * onClick, before any `await`.
+ */
+export function unlockSpeechSynthesis() {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  if (unlocked) return;
+  unlocked = true;
+  try {
+    const utter = new SpeechSynthesisUtterance(" ");
+    utter.volume = 0.01; // effectively silent — this call exists purely to unlock, not to be heard
+    window.speechSynthesis.speak(utter);
+  } catch {
+    // best-effort
+  }
+}
+
 function buildUtterance(text: string, voice: SpeechSynthesisVoice | null) {
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = "en-US";

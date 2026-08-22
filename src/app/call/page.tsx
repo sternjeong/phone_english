@@ -10,7 +10,7 @@ import { useSpeechToText } from "@/components/call/useSpeechToText";
 import { storage } from "@/lib/storage";
 import { useClientValue } from "@/lib/useClientValue";
 import { useAsync } from "@/lib/useAsync";
-import { speakText, preloadVoice } from "@/lib/tts";
+import { speakText, preloadVoice, unlockSpeechSynthesis } from "@/lib/tts";
 import type { ChatMessage, Persona, Topic, CallSession, Report } from "@/lib/types";
 
 const DEFAULT_CALL_SECONDS = 5 * 60;
@@ -157,7 +157,10 @@ export default function CallPage() {
       };
       setMessages([aiMsg]);
       setTypingId(aiMsg.id);
-      speakText(aiMsg.textEn);
+      // Don't speak yet — on iOS Safari, speech only plays reliably once
+      // it's happened inside a genuine tap (see answerCall), and playing
+      // audio before the user has picked up would be an odd "hears you
+      // before answering" experience anyway. Spoken once they hit 받기.
     } catch (err) {
       setGreetingError(err instanceof Error ? err.message : "AI 응답을 가져오지 못했어요");
     } finally {
@@ -177,6 +180,12 @@ export default function CallPage() {
   }, [personaLoading]);
 
   const answerCall = () => {
+    // Must be the very first thing here, synchronously, with no `await`
+    // before it — this is what makes iOS Safari allow speech at all for
+    // the rest of the call (see unlockSpeechSynthesis's docs).
+    unlockSpeechSynthesis();
+    if (messages[0]) speakText(messages[0].textEn);
+
     if (typeof window !== "undefined") {
       window.localStorage.setItem(HINT_SEEN_KEY, "1");
     }
