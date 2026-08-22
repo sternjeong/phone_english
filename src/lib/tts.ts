@@ -8,13 +8,22 @@
  * pick once resolved instead of re-querying on every utterance.
  */
 
+// Ordered by how natural/pleasant they actually sound, not just "is
+// female" — "Google US English" is the most universally-available female
+// voice on Chrome but reads noticeably flat/robotic compared to the OS
+// "enhanced"/"natural" voice packs below, so those are tried first and
+// Google's is kept as the last-resort fallback rather than the default.
 const PREFERRED_VOICE_NAMES = [
-  "Google US English", // Chrome desktop — female by default
-  "Samantha", // macOS / iOS Safari
+  "Microsoft Ava Online (Natural) - English (United States)",
+  "Microsoft Emma Online (Natural) - English (United States)",
   "Microsoft Aria Online (Natural) - English (United States)",
   "Microsoft Jenny Online (Natural) - English (United States)",
-  "Microsoft Zira Desktop - English (United States)",
+  "Ava", // macOS "enhanced"/"premium" voice pack
+  "Allison", // macOS "enhanced"/"premium" voice pack
+  "Samantha", // macOS / iOS Safari default — solid, natural
   "Google UK English Female",
+  "Microsoft Zira Desktop - English (United States)",
+  "Google US English", // Chrome desktop fallback — female, but flatter-sounding
 ];
 
 const FEMALE_NAME_HINTS = [
@@ -136,8 +145,11 @@ function buildUtterance(text: string, voice: SpeechSynthesisVoice | null) {
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = "en-US";
   if (voice) utter.voice = voice;
-  utter.pitch = 1.15; // a touch higher — reads as younger than the default
-  utter.rate = 1.02;
+  // 1.15 read as an exaggerated, slightly chipmunk-y pitch rather than
+  // "pretty" — a much smaller lift plus a touch slower than normal speed
+  // reads as warmer/more natural instead.
+  utter.pitch = 1.05;
+  utter.rate = 0.97;
   return utter;
 }
 
