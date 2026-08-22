@@ -83,6 +83,15 @@ function loadVoices(): Promise<SpeechSynthesisVoice[]> {
 async function getFemaleVoice(): Promise<SpeechSynthesisVoice | null> {
   if (cachedVoice !== undefined) return cachedVoice;
   const voices = await loadVoices();
+  if (voices.length === 0) {
+    // Some environments (bare Linux desktops without a speech engine
+    // installed, some embedded webviews) expose the Web Speech API but
+    // have zero actual voices — speak() will then silently do nothing.
+    // Nothing we can do about that from here, but worth surfacing.
+    console.warn(
+      "[tts] speechSynthesis reports 0 voices — this browser/OS has no TTS engine available, so AI replies will be silent."
+    );
+  }
   cachedVoice = pickFemaleVoice(voices);
   return cachedVoice;
 }
@@ -97,18 +106,44 @@ export function preloadVoice() {
   void getFemaleVoice();
 }
 
-/** Speaks `text` in a young-woman English voice. Fire-and-forget; failures are silent (TTS is cosmetic, never blocks the call). */
-export async function speakText(text: string) {
+function buildUtterance(text: string, voice: SpeechSynthesisVoice | null) {
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "en-US";
+  if (voice) utter.voice = voice;
+  utter.pitch = 1.15; // a touch higher — reads as younger than the default
+  utter.rate = 1.02;
+  return utter;
+}
+
+/**
+ * Speaks `text` in a young-woman English voice. Fire-and-forget; failures
+ * are silent (TTS is cosmetic, never blocks the call).
+ *
+ * Deliberately NOT an `async function` — some browsers (notably Safari/
+ * iOS) only allow `speechSynthesis.speak()` to fire reliably when it's
+ * still inside the same call stack as whatever triggered it; `await`-ing
+ * anything first (even something that resolves instantly) yields to the
+ * microtask queue and can silently drop the utterance. Since
+ * `preloadVoice()` is called on call-mount, the voice is normally already
+ * cached by the time any reply comes in, so we speak synchronously in that
+ * case and only fall back to the async path before the cache is warm.
+ */
+export function speakText(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
   try {
-    const voice = await getFemaleVoice();
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "en-US";
-    if (voice) utter.voice = voice;
-    utter.pitch = 1.15; // a touch higher — reads as younger than the default
-    utter.rate = 1.02;
-    window.speechSynthesis.speak(utter);
+    if (cachedVoice !== undefined) {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(buildUtterance(text, cachedVoice));
+      return;
+    }
+    getFemaleVoice()
+      .then((voice) => {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(buildUtterance(text, voice));
+      })
+      .catch(() => {
+        // best-effort — TTS failure shouldn't break the call flow
+      });
   } catch {
     // best-effort — TTS failure shouldn't break the call flow
   }
