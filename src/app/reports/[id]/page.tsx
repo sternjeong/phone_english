@@ -26,11 +26,13 @@ export default function ReportDetailPage() {
   const [override, setOverride] = useState<Report | null>(null);
   const report = override ?? storedReport;
 
-  const sessionsState = useAsync(() => storage.getSessions(), []);
-  const session =
-    sessionsState.status === "ready" && report
-      ? sessionsState.data.find((s) => s.id === report.callSessionId) ?? null
-      : null;
+  // Fetch just the one session this report points at, instead of the
+  // user's entire call history — cheap now, matters once history grows.
+  const sessionState = useAsync(
+    () => (report ? storage.getSession(report.callSessionId) : Promise.resolve(null)),
+    [report?.callSessionId]
+  );
+  const session = sessionState.status === "ready" ? sessionState.data : null;
 
   const expressionsState = useAsync(() => archive.getExpressions(), []);
   const sentencesState = useAsync(() => archive.getSentences(), []);

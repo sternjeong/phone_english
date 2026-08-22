@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PhoneShell } from "@/components/ui/PhoneShell";
+import { Backdrop } from "@/components/ui/Backdrop";
 import { TopicDial } from "@/components/call/TopicDial";
 import { AiBubble, UserBubble } from "@/components/call/MessageBubble";
 import { useSpeechToText } from "@/components/call/useSpeechToText";
@@ -261,13 +262,11 @@ export default function CallPage() {
 
   // 탭-토글 방식: 한 번 누르면 녹음 시작, 다시 누르면 녹음 종료 후 전송.
   // (기존엔 누르고 있는 동안만 녹음되는 방식이라 불편하다는 피드백 반영)
-  const historyBeforeNext = useMemo(() => messages, [messages]);
-
   const handleMicToggle = async () => {
     if (!sttSupported || pendingUserId) return;
     if (listening) {
       const transcript = await stop();
-      if (transcript) sendUtterance(transcript, historyBeforeNext);
+      if (transcript) sendUtterance(transcript, messages);
       return;
     }
     start();
@@ -275,7 +274,7 @@ export default function CallPage() {
 
   const handleTextSubmit = () => {
     if (!textFallback.trim() || pendingUserId) return;
-    sendUtterance(textFallback, historyBeforeNext);
+    sendUtterance(textFallback, messages);
     setTextFallback("");
   };
 
@@ -539,7 +538,7 @@ export default function CallPage() {
           )}
 
           {extendPromptOpen && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 px-8">
+            <Backdrop className="z-20 bg-black/70 px-8">
               <div className="w-full max-w-xs rounded-2xl border border-ink-700 bg-ink-900 p-6 text-center">
                 <p className="mb-1 text-base font-semibold text-ink-100">
                   {Math.floor(timeLimit / 60)}분이 지났어요
@@ -562,7 +561,7 @@ export default function CallPage() {
                   </button>
                 </div>
               </div>
-            </div>
+            </Backdrop>
           )}
         </div>
       )}

@@ -48,6 +48,7 @@ export const storage = {
   setPersona: (p: Persona) => putJSON("/api/data/persona", p),
 
   getSessions: () => getJSON<CallSession[]>("/api/data/sessions"),
+  getSession: (id: string) => getJSON<CallSession | null>(`/api/data/sessions/${id}`),
   saveSession: (session: CallSession) => postJSON("/api/data/sessions", session),
 
   getReports: () => getJSON<Report[]>("/api/data/reports"),

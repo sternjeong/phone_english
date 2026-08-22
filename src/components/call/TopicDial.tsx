@@ -1,5 +1,6 @@
 "use client";
 
+import { Backdrop } from "@/components/ui/Backdrop";
 import type { Topic } from "@/lib/types";
 
 /**
@@ -28,10 +29,7 @@ export function TopicDial({
   const currentInfo = TOPICS.find((t) => t.id === current)!;
 
   return (
-    <div
-      className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-ink-950/80 backdrop-blur-md"
-      onClick={onClose}
-    >
+    <Backdrop className="z-30 flex-col gap-6 bg-ink-950/80 backdrop-blur-md" onClick={onClose}>
       <button
         aria-label="닫기"
         onClick={onClose}
@@ -65,6 +63,6 @@ export function TopicDial({
           </button>
         ))}
       </div>
-    </div>
+    </Backdrop>
   );
 }

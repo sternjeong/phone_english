@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { OWNER_USER_ID } from "@/lib/authConstants";
 
 /**
  * Single-user passcode login — swapped in for Google OAuth because Google
@@ -8,8 +9,8 @@ import Credentials from "next-auth/providers/credentials";
  * (see docs/PROJECT_NOTES.md decisions, 8차). No external console setup,
  * no client id/secret — just AUTH_PASSCODE in .env.local / Vercel env vars.
  *
- * JWT session strategy; the fixed user id "owner" is what src/lib/db.ts
- * scopes all app data by (there's only ever one).
+ * JWT session strategy; OWNER_USER_ID is the fixed id src/lib/db.ts scopes
+ * all app data by (there's only ever one user).
  */
 export const {
   handlers: { GET, POST },
@@ -29,7 +30,7 @@ export const {
         if (typeof passcode !== "string" || passcode !== expected) {
           return null;
         }
-        return { id: "owner", name: "Me" };
+        return { id: OWNER_USER_ID, name: "Me" };
       },
     }),
   ],
