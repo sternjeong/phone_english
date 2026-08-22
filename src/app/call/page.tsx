@@ -9,7 +9,7 @@ import { useSpeechToText } from "@/components/call/useSpeechToText";
 import { storage } from "@/lib/storage";
 import { useClientValue } from "@/lib/useClientValue";
 import { useAsync } from "@/lib/useAsync";
-import { speakText } from "@/lib/tts";
+import { speakText, preloadVoice } from "@/lib/tts";
 import type { ChatMessage, Persona, Topic, CallSession, Report } from "@/lib/types";
 
 const DEFAULT_CALL_SECONDS = 5 * 60;
@@ -90,6 +90,9 @@ export default function CallPage() {
   const callStartRef = useRef<number>(0);
   useEffect(() => {
     callStartRef.current = Date.now();
+    // Warm up the female-voice lookup now, in parallel with the greeting
+    // request, so the first speakText() call isn't the one paying for it.
+    preloadVoice();
   }, []);
 
   const { supported: sttSupported, listening, start, stop } = useSpeechToText();

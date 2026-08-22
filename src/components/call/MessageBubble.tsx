@@ -19,7 +19,11 @@ function useTypewriter(text: string, active: boolean, onDone?: () => void) {
     }
     setShown("");
     let i = 0;
-    const step = Math.max(1, Math.round(text.length / 60));
+    // Sized so the reveal takes ~450ms total regardless of reply length —
+    // long enough to read as "typing", short enough not to add perceptible
+    // delay on top of the network round trip (part of the latency pass;
+    // this used to be a flat ~1.1s no matter how short the reply was).
+    const step = Math.max(1, Math.round(text.length / 35));
     const id = setInterval(() => {
       i += step;
       setShown(text.slice(0, i));
@@ -27,7 +31,7 @@ function useTypewriter(text: string, active: boolean, onDone?: () => void) {
         clearInterval(id);
         onDone?.();
       }
-    }, 18);
+    }, 13);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, active]);

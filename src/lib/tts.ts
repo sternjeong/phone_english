@@ -87,6 +87,16 @@ async function getFemaleVoice(): Promise<SpeechSynthesisVoice | null> {
   return cachedVoice;
 }
 
+/**
+ * Call once when a call screen mounts so the (up to ~400ms) voice-list
+ * lookup happens while the greeting is still in flight over the network,
+ * instead of stacking on top of it the first time speakText() runs.
+ */
+export function preloadVoice() {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  void getFemaleVoice();
+}
+
 /** Speaks `text` in a young-woman English voice. Fire-and-forget; failures are silent (TTS is cosmetic, never blocks the call). */
 export async function speakText(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
