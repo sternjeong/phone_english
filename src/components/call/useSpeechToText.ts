@@ -39,84 +39,154 @@ function getRecognitionCtor(): SpeechRecognitionCtor | null {
   return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
 }
 
-// Chrome will auto-end a recognizer on its own (e.g. after a silence
-// timeout) even with `continuous: true`. If that happens *before* the user
-// taps the mic again, `stop()` had nothing to call `.stop()` on and its
-// promise would hang forever — the bug reported live: tapping to stop did
-// nothing and the conversation never continued. A hard safety timeout
-// guarantees `stop()` always resolves even if the browser never fires
-// `onend` again after we call `.stop()`.
+// Chrome can end a recognition session on its own well before the user taps
+// to stop — most commonly a "no speech detected yet" timeout that can fire
+// just a few seconds after start(), even with `continuous: true`. Two bugs
+// came from this in practice:
+//  1. (fixed previously) if nothing was listening for `onend`, `stop()`'s
+//     promise hung forever because the browser had already ended the
+//     session before the user's second tap.
+//  2. (fixing now) naively treating *every* `onend` as "the user is done"
+//     made the mic silently stop capturing mid-sentence, before the user
+//     had even finished talking, whenever Chrome's own timeout fired first.
+// The fix for both: only *finalize* (resolve stop(), flip `listening` off)
+// on an `onend` that followed our own explicit `.stop()` call. Any other
+// `onend` is Chrome ending the session against our wishes, so we
+// transparently start a fresh recognition instance and keep accumulating
+// into the same transcript — the UI never has to know it happened.
 const STOP_SAFETY_TIMEOUT_MS = 3000;
+
+/** Shared mutable state a recognition instance's handlers need to see —
+ * bundled into one object instead of closing over hook-scoped bindings, so
+ * `attachHandlers` can call itself to restart without React's hooks/
+ * closure-immutability lint treating that as an unsafe self-reference. */
+interface RecognitionCtx {
+  recognitionRef: React.RefObject<MinimalSpeechRecognition | null>;
+  sessionTranscriptRef: React.RefObject<string>;
+  committedTranscriptRef: React.RefObject<string>;
+  stoppingRef: React.RefObject<boolean>;
+  resolveStopRef: React.RefObject<((transcript: string) => void) | null>;
+  setListening: (v: boolean) => void;
+}
+
+function fullTranscript(ctx: RecognitionCtx) {
+  return `${ctx.committedTranscriptRef.current} ${ctx.sessionTranscriptRef.current}`.trim();
+}
+
+function attachHandlers(recognition: MinimalSpeechRecognition, ctx: RecognitionCtx) {
+  recognition.lang = "en-US";
+  recognition.interimResults = true;
+  recognition.continuous = true;
+  recognition.onresult = (event) => {
+    let combined = "";
+    for (let i = 0; i < event.results.length; i++) {
+      combined += event.results[i][0]?.transcript ?? "";
+    }
+    ctx.sessionTranscriptRef.current = combined;
+  };
+  recognition.onerror = () => {
+    // swallow — onend follows every onerror, which decides what happens next
+  };
+  recognition.onend = () => {
+    if (ctx.stoppingRef.current) {
+      // The user actually asked to stop — finalize for real.
+      ctx.stoppingRef.current = false;
+      ctx.setListening(false);
+      ctx.recognitionRef.current = null;
+      const resolve = ctx.resolveStopRef.current;
+      ctx.resolveStopRef.current = null;
+      resolve?.(fullTranscript(ctx));
+      return;
+    }
+    // Chrome ended the session on its own (e.g. a no-speech timeout) while
+    // the user is still holding the mic "on" — keep what was heard so far
+    // and transparently pick back up instead of going silent.
+    ctx.committedTranscriptRef.current = fullTranscript(ctx);
+    ctx.sessionTranscriptRef.current = "";
+    try {
+      const Ctor = getRecognitionCtor();
+      if (!Ctor) return;
+      const next = new Ctor();
+      attachHandlers(next, ctx);
+      ctx.recognitionRef.current = next;
+      next.start();
+    } catch {
+      // Couldn't restart — better to end cleanly than hang silently "on".
+      ctx.setListening(false);
+      ctx.recognitionRef.current = null;
+    }
+  };
+}
 
 export function useSpeechToText() {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
-  const transcriptRef = useRef("");
+  const sessionTranscriptRef = useRef(""); // this recognition instance only
+  const committedTranscriptRef = useRef(""); // carried over across auto-restarts
+  const stoppingRef = useRef(false);
   const resolveStopRef = useRef<((transcript: string) => void) | null>(null);
 
-  const supported = typeof window !== "undefined" && getRecognitionCtor() != null;
+  const ctx: RecognitionCtx = {
+    recognitionRef,
+    sessionTranscriptRef,
+    committedTranscriptRef,
+    stoppingRef,
+    resolveStopRef,
+    setListening,
+  };
 
-  const settle = useCallback(() => {
-    setListening(false);
-    recognitionRef.current = null;
-    const resolve = resolveStopRef.current;
-    resolveStopRef.current = null;
-    resolve?.(transcriptRef.current.trim());
-  }, []);
+  const supported = typeof window !== "undefined" && getRecognitionCtor() != null;
 
   const start = useCallback(() => {
     const Ctor = getRecognitionCtor();
     if (!Ctor) return;
-    transcriptRef.current = "";
+    committedTranscriptRef.current = "";
+    sessionTranscriptRef.current = "";
+    stoppingRef.current = false;
     const recognition = new Ctor();
-    recognition.lang = "en-US";
-    recognition.interimResults = true;
-    recognition.continuous = true;
-    recognition.onresult = (event) => {
-      let combined = "";
-      for (let i = 0; i < event.results.length; i++) {
-        combined += event.results[i][0]?.transcript ?? "";
-      }
-      transcriptRef.current = combined;
-    };
-    recognition.onerror = () => {
-      // swallow — settle() (via onend) resolves with whatever was captured
-    };
-    // Fires whether *we* called stop() or the browser ended the session on
-    // its own — this is what makes an unexpected auto-end recoverable
-    // instead of leaving `listening` stuck true with no way to reset it.
-    recognition.onend = settle;
+    attachHandlers(recognition, ctx);
     recognitionRef.current = recognition;
     setListening(true);
     recognition.start();
-  }, [settle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const stop = useCallback((): Promise<string> => {
     return new Promise((resolve) => {
       const recognition = recognitionRef.current;
       if (!recognition) {
-        // Already ended (e.g. an auto-timeout beat us to it) — nothing to
-        // stop, just hand back whatever was captured before that happened.
+        // Nothing running (e.g. a restart attempt just failed) — hand back
+        // whatever was captured before that happened.
         setListening(false);
-        resolve(transcriptRef.current.trim());
+        resolve(fullTranscript(ctx));
         return;
       }
-      resolveStopRef.current = resolve;
-      const safety = setTimeout(settle, STOP_SAFETY_TIMEOUT_MS);
-      const originalResolve = resolveStopRef.current;
+      stoppingRef.current = true;
+      const safety = setTimeout(() => {
+        stoppingRef.current = false;
+        setListening(false);
+        recognitionRef.current = null;
+        resolveStopRef.current = null;
+        resolve(fullTranscript(ctx));
+      }, STOP_SAFETY_TIMEOUT_MS);
       resolveStopRef.current = (transcript) => {
         clearTimeout(safety);
-        originalResolve(transcript);
+        resolve(transcript);
       };
       try {
         recognition.stop();
       } catch {
         // Already in a stopped/invalid state — onend won't fire again.
         clearTimeout(safety);
-        settle();
+        stoppingRef.current = false;
+        resolveStopRef.current = null;
+        setListening(false);
+        recognitionRef.current = null;
+        resolve(fullTranscript(ctx));
       }
     });
-  }, [settle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return { supported, listening, start, stop };
 }
