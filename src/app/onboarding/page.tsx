@@ -5,6 +5,9 @@ import { useState } from "react";
 import { PhoneShell } from "@/components/ui/PhoneShell";
 import { Pill } from "@/components/ui/Pill";
 import { storage } from "@/lib/storage";
+import { useAsync } from "@/lib/useAsync";
+import { speakText, unlockSpeechSynthesis, VOICE_OPTIONS } from "@/lib/tts";
+import type { Persona } from "@/lib/types";
 
 /**
  * Onboarding: SCREEN 05 marketing teaser, then a persona setup form.
@@ -20,15 +23,33 @@ const PERSONALITY_PRESETS = [
 ];
 
 export default function OnboardingPage() {
-  const router = useRouter();
-  const [step, setStep] = useState<"teaser" | "form">("teaser");
+  const existingState = useAsync(() => storage.getPersona(), []);
+  // Editing an existing persona: skip the marketing teaser (nothing to sell
+  // someone who already has a friend) and go straight to a pre-filled form.
+  // Waiting for the fetch to settle, then keying the form by the resulting
+  // persona id, means the form's own useState() initializers do the
+  // pre-filling — no effect-driven setState needed.
+  if (existingState.status === "loading") return null;
+  const existing = existingState.status === "ready" ? existingState.data : null;
+  return <OnboardingForm key={existing?.id ?? "new"} existing={existing} />;
+}
 
-  const [name, setName] = useState("Haze");
-  const [personality, setPersonality] = useState(PERSONALITY_PRESETS[0]);
-  const [interests, setInterests] = useState<string[]>([]);
+function OnboardingForm({ existing }: { existing: Persona | null }) {
+  const router = useRouter();
+  const [step, setStep] = useState<"teaser" | "form">(existing ? "form" : "teaser");
+
+  const [name, setName] = useState(existing?.name ?? "Haze");
+  const [personality, setPersonality] = useState(existing?.personality ?? PERSONALITY_PRESETS[0]);
+  const [interests, setInterests] = useState<string[]>(existing?.interests ?? []);
   const [customInterest, setCustomInterest] = useState("");
+  const [voiceId, setVoiceId] = useState(existing?.voiceId ?? VOICE_OPTIONS[0].id);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  function previewVoice(id: string) {
+    unlockSpeechSynthesis();
+    speakText("Hi! I'm excited to practice English with you.", id);
+  }
 
   function toggleInterest(chip: string) {
     setInterests((prev) =>
@@ -50,10 +71,11 @@ export default function OnboardingPage() {
     setSaveError(null);
     try {
       await storage.setPersona({
-        id: crypto.randomUUID(),
+        id: existing?.id ?? crypto.randomUUID(),
         name: trimmedName,
         personality,
         interests: interests.length > 0 ? interests : ["일상 대화"],
+        voiceId,
       });
       router.push("/");
     } catch (err) {
@@ -121,8 +143,10 @@ export default function OnboardingPage() {
           ← 뒤로
         </button>
 
-        <h2 className="mb-1 text-2xl font-bold text-ink-100">AI 친구를 만들어볼까요?</h2>
-        <p className="mb-8 text-sm text-ink-400">이름, 성격, 관심사를 설정하면 대화가 시작돼요.</p>
+        <h2 className="mb-1 text-2xl font-bold text-ink-100">
+          {existing ? "AI 친구 설정 바꾸기" : "AI 친구를 만들어볼까요?"}
+        </h2>
+        <p className="mb-8 text-sm text-ink-400">이름, 성격, 관심사, 목소리를 설정하면 대화가 시작돼요.</p>
 
         <label className="mb-2 text-sm font-medium text-ink-100">이름</label>
         <input
@@ -179,6 +203,45 @@ export default function OnboardingPage() {
           >
             추가
           </button>
+        </div>
+
+        <label className="mb-2 text-sm font-medium text-ink-100">목소리</label>
+        <div className="mb-8 flex flex-col gap-2">
+          {VOICE_OPTIONS.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => setVoiceId(v.id)}
+              className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
+                voiceId === v.id
+                  ? "border-mint-500 bg-ink-900"
+                  : "border-ink-700 bg-ink-900/40 hover:border-ink-500"
+              }`}
+            >
+              <span>
+                <span className="block text-sm font-medium text-ink-100">{v.label}</span>
+                <span className="block text-xs text-ink-400">{v.description}</span>
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  previewVoice(v.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    previewVoice(v.id);
+                  }
+                }}
+                aria-label={`${v.label} 목소리 미리듣기`}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-ink-700 text-ink-100 transition hover:border-mint-500"
+              >
+                ▶
+              </span>
+            </button>
+          ))}
         </div>
 
         {saveError && (

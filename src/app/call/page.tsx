@@ -91,9 +91,6 @@ export default function CallPage() {
   const callStartRef = useRef<number>(0);
   useEffect(() => {
     callStartRef.current = Date.now();
-    // Warm up the female-voice lookup now, in parallel with the greeting
-    // request, so the first speakText() call isn't the one paying for it.
-    preloadVoice();
   }, []);
 
   const { supported: sttSupported, listening, interim, micError, start, stop } = useSpeechToText();
@@ -105,6 +102,13 @@ export default function CallPage() {
     console.error("Failed to load persona:", personaState.error);
   }
   const persona = personaState.status === "ready" ? personaState.data ?? DEFAULT_PERSONA : DEFAULT_PERSONA;
+
+  useEffect(() => {
+    if (personaLoading) return;
+    // Warm up the voice lookup now, in parallel with the greeting request,
+    // so the first speakText() call isn't the one paying for it.
+    preloadVoice(persona.voiceId);
+  }, [personaLoading, persona.voiceId]);
 
   // First-call hint tooltip: derived straight from localStorage so it
   // updates the instant answerCall() flips the flag, no extra state needed.
@@ -184,7 +188,7 @@ export default function CallPage() {
     // before it — this is what makes iOS Safari allow speech at all for
     // the rest of the call (see unlockSpeechSynthesis's docs).
     unlockSpeechSynthesis();
-    if (messages[0]) speakText(messages[0].textEn);
+    if (messages[0]) speakText(messages[0].textEn, persona.voiceId);
 
     if (typeof window !== "undefined") {
       window.localStorage.setItem(HINT_SEEN_KEY, "1");
@@ -246,7 +250,7 @@ export default function CallPage() {
           aiMsg,
         ]);
         setTypingId(aiMsg.id);
-        speakText(aiMsg.textEn);
+        speakText(aiMsg.textEn, persona.voiceId);
       } catch (err) {
         setConvoError({
           userMsgId: userMsg.id,

@@ -18,8 +18,26 @@ export default function ReportsPage() {
   const reportsState = useAsync(() => storage.getReports(), []);
   const expressionsState = useAsync(() => archive.getExpressions(), []);
   const sentencesState = useAsync(() => archive.getSentences(), []);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
 
-  const reports = reportsState.status === "ready" ? reportsState.data : null;
+  async function handleDelete(id: string) {
+    if (!confirm("이 통화 리포트와 대화 내용을 삭제할까요? 삭제하면 되돌릴 수 없고, 이후 AI 대화에서도 참고되지 않아요.")) return;
+    setDeletingId(id);
+    try {
+      await storage.deleteReport(id);
+      setRemovedIds((prev) => [...prev, id]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "삭제하지 못했어요. 다시 시도해주세요.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  const reports =
+    reportsState.status === "ready"
+      ? reportsState.data.filter((r) => !removedIds.includes(r.id))
+      : null;
   const bookmarkedExpressions = expressionsState.status === "ready" ? expressionsState.data : null;
   const bookmarkedSentences = sentencesState.status === "ready" ? sentencesState.data : null;
 
@@ -54,18 +72,27 @@ export default function ReportsPage() {
           ) : (
             <div className="flex flex-col gap-3">
               {reports.map((r) => (
-                <Link
+                <div
                   key={r.id}
-                  href={`/reports/${r.id}`}
-                  className="rounded-2xl border border-paper-200 bg-paper-0 p-4 transition hover:border-paper-600"
+                  className="flex items-center gap-2 rounded-2xl border border-paper-200 bg-paper-0 p-4 transition hover:border-paper-600"
                 >
-                  <p className="mb-1 text-base font-semibold text-paper-900">{r.title}</p>
-                  <div className="flex items-center gap-3 text-xs text-paper-600">
-                    <span>{formatDate(r.createdAt)}</span>
-                    <span>·</span>
-                    <span>🔥 {r.wordCount} 단어</span>
-                  </div>
-                </Link>
+                  <Link href={`/reports/${r.id}`} className="flex-1">
+                    <p className="mb-1 text-base font-semibold text-paper-900">{r.title}</p>
+                    <div className="flex items-center gap-3 text-xs text-paper-600">
+                      <span>{formatDate(r.createdAt)}</span>
+                      <span>·</span>
+                      <span>🔥 {r.wordCount} 단어</span>
+                    </div>
+                  </Link>
+                  <button
+                    onClick={() => handleDelete(r.id)}
+                    disabled={deletingId === r.id}
+                    aria-label="리포트 삭제"
+                    className="shrink-0 rounded-full p-2 text-paper-400 transition hover:bg-coral-400/10 hover:text-coral-500 disabled:opacity-50"
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
               ))}
             </div>
           )
@@ -190,6 +217,14 @@ function DocumentIcon() {
       <path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" />
       <path d="M14 2v6h6" />
       <path d="M8 13h8M8 17h5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14" />
     </svg>
   );
 }

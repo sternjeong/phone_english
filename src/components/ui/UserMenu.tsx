@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 
@@ -24,6 +25,13 @@ export function UserMenu() {
       {open && (
         <div className="absolute right-0 top-10 z-10 w-40 rounded-xl border border-ink-700 bg-ink-900 p-3 text-left shadow-xl">
           <p className="mb-3 truncate text-sm font-medium text-ink-100">로그인됨</p>
+          <Link
+            href="/onboarding"
+            onClick={() => setOpen(false)}
+            className="mb-2 block w-full rounded-full border border-ink-700 py-1.5 text-center text-xs text-ink-100 transition hover:border-mint-500"
+          >
+            AI 친구 설정
+          </Link>
           <button
             onClick={() => signOut({ redirectTo: "/sign-in" })}
             className="w-full rounded-full border border-ink-700 py-1.5 text-xs text-ink-100 transition hover:border-coral-400 hover:text-coral-400"

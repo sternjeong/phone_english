@@ -26,6 +26,58 @@ const PREFERRED_VOICE_NAMES = [
   "Google US English", // Chrome desktop fallback — female, but flatter-sounding
 ];
 
+/**
+ * User-facing voice picker (persona.voiceId). Each option lists the actual
+ * `SpeechSynthesisVoice.name` values — in priority order — that would
+ * satisfy that pick on a given browser/OS, since no single voice name is
+ * available everywhere (iOS Safari, macOS Safari, and Chrome all expose
+ * different voice sets). `pickVoiceFor` walks each option's names in order
+ * and falls back to the generic `pickFemaleVoice` heuristic if none match.
+ */
+export const VOICE_OPTIONS: { id: string; label: string; description: string; names: string[] }[] = [
+  {
+    id: "ava",
+    label: "Ava",
+    description: "밝고 또렷한 목소리",
+    names: ["Microsoft Ava Online (Natural) - English (United States)", "Ava", "Samantha"],
+  },
+  {
+    id: "emma",
+    label: "Emma",
+    description: "차분하고 다정한 목소리",
+    names: ["Microsoft Emma Online (Natural) - English (United States)", "Allison", "Samantha"],
+  },
+  {
+    id: "aria",
+    label: "Aria",
+    description: "또박또박한 목소리",
+    names: ["Microsoft Aria Online (Natural) - English (United States)", "Samantha"],
+  },
+  {
+    id: "jenny",
+    label: "Jenny",
+    description: "발랄하고 경쾌한 목소리",
+    names: ["Microsoft Jenny Online (Natural) - English (United States)", "Karen", "Samantha"],
+  },
+  {
+    id: "zira",
+    label: "Zira",
+    description: "차분한 톤의 목소리",
+    names: ["Microsoft Zira Desktop - English (United States)", "Google UK English Female", "Moira", "Samantha"],
+  },
+];
+
+function pickVoiceFor(voiceId: string | undefined, voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  const option = VOICE_OPTIONS.find((v) => v.id === voiceId);
+  if (option) {
+    for (const name of option.names) {
+      const match = voices.find((v) => v.name === name);
+      if (match) return match;
+    }
+  }
+  return pickFemaleVoice(voices);
+}
+
 const FEMALE_NAME_HINTS = [
   "female",
   "woman",
@@ -49,7 +101,7 @@ const FEMALE_NAME_HINTS = [
 
 const MALE_NAME_HINTS = ["male", "david", "mark", "daniel", "alex", "fred", "tom", "guy", "james"];
 
-let cachedVoice: SpeechSynthesisVoice | null | undefined;
+const cachedVoicesById = new Map<string, SpeechSynthesisVoice | null>();
 
 function pickFemaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
   for (const name of PREFERRED_VOICE_NAMES) {
@@ -89,8 +141,9 @@ function loadVoices(): Promise<SpeechSynthesisVoice[]> {
   });
 }
 
-async function getFemaleVoice(): Promise<SpeechSynthesisVoice | null> {
-  if (cachedVoice !== undefined) return cachedVoice;
+async function getVoice(voiceId: string | undefined): Promise<SpeechSynthesisVoice | null> {
+  const key = voiceId ?? "__default__";
+  if (cachedVoicesById.has(key)) return cachedVoicesById.get(key) ?? null;
   const voices = await loadVoices();
   if (voices.length === 0) {
     // Some environments (bare Linux desktops without a speech engine
@@ -101,8 +154,9 @@ async function getFemaleVoice(): Promise<SpeechSynthesisVoice | null> {
       "[tts] speechSynthesis reports 0 voices — this browser/OS has no TTS engine available, so AI replies will be silent."
     );
   }
-  cachedVoice = pickFemaleVoice(voices);
-  return cachedVoice;
+  const picked = pickVoiceFor(voiceId, voices);
+  cachedVoicesById.set(key, picked);
+  return picked;
 }
 
 /**
@@ -110,9 +164,9 @@ async function getFemaleVoice(): Promise<SpeechSynthesisVoice | null> {
  * lookup happens while the greeting is still in flight over the network,
  * instead of stacking on top of it the first time speakText() runs.
  */
-export function preloadVoice() {
+export function preloadVoice(voiceId?: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  void getFemaleVoice();
+  void getVoice(voiceId);
 }
 
 /**
@@ -186,14 +240,15 @@ function speakNow(text: string, voice: SpeechSynthesisVoice | null) {
  * cached by the time any reply comes in, so we speak synchronously in that
  * case and only fall back to the async path before the cache is warm.
  */
-export function speakText(text: string) {
+export function speakText(text: string, voiceId?: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
   try {
-    if (cachedVoice !== undefined) {
-      speakNow(text, cachedVoice);
+    const key = voiceId ?? "__default__";
+    if (cachedVoicesById.has(key)) {
+      speakNow(text, cachedVoicesById.get(key) ?? null);
       return;
     }
-    getFemaleVoice()
+    getVoice(voiceId)
       .then((voice) => speakNow(text, voice))
       .catch(() => {
         // best-effort — TTS failure shouldn't break the call flow

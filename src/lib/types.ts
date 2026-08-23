@@ -8,6 +8,7 @@ export type Persona = {
   name: string;
   personality: string;
   interests: string[];
+  voiceId?: string; // see src/lib/tts.ts VOICE_OPTIONS
 };
 
 export type ParaphraseStatus = "pending" | "approved" | "corrected";
