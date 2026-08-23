@@ -278,6 +278,10 @@ export default function CallPage() {
       if (transcript) sendUtterance(transcript, messages);
       return;
     }
+    // Re-unlocking on every mic tap too (not just 받기) — some mobile
+    // Chrome builds have been observed wanting speech re-armed per
+    // gesture, not just once per page.
+    unlockSpeechSynthesis();
     start();
   };
 

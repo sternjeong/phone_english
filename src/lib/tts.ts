@@ -115,24 +115,24 @@ export function preloadVoice() {
   void getFemaleVoice();
 }
 
-let unlocked = false;
-
 /**
- * iOS Safari is stricter than desktop browsers about *when* it's allowed to
- * speak at all: `speechSynthesis.speak()` only works reliably if it's been
- * called at least once directly inside a user gesture's event handler (tap/
- * click) — every subsequent call, even from an async context (like a
- * network response arriving), then works for the rest of the page's
- * lifetime. Without this "unlock", speak() silently does nothing on iOS —
- * confirmed by a user report: worked on desktop, dead silent on iPhone
- * Safari. Call this synchronously inside the "받기" (answer call) button's
- * onClick, before any `await`.
+ * Mobile Chrome (Android) and Safari (iOS) are both stricter than desktop
+ * about *when* they're allowed to speak at all: `speechSynthesis.speak()`
+ * only works reliably once it's been called directly inside a user
+ * gesture's event handler (tap/click) at least once — every subsequent
+ * call, even from an async context (like a network response arriving),
+ * then works for the rest of the page's lifetime. Without this "unlock",
+ * speak() silently does nothing (confirmed live: worked on desktop, dead
+ * silent on iPhone Safari; then a second report of the same symptom on
+ * Android Chrome). Call this synchronously inside a tap handler, before
+ * any `await`. Deliberately callable more than once (no "only once" guard)
+ * — it's cheap and near-silent, and different mobile browsers have been
+ * observed wanting the unlock repeated per-gesture rather than once ever.
  */
 export function unlockSpeechSynthesis() {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  if (unlocked) return;
-  unlocked = true;
   try {
+    window.speechSynthesis.resume(); // Android Chrome can leave the engine "paused"
     const utter = new SpeechSynthesisUtterance(" ");
     utter.volume = 0.01; // effectively silent — this call exists purely to unlock, not to be heard
     window.speechSynthesis.speak(utter);
@@ -153,6 +153,26 @@ function buildUtterance(text: string, voice: SpeechSynthesisVoice | null) {
   return utter;
 }
 
+function speakNow(text: string, voice: SpeechSynthesisVoice | null) {
+  const synth = window.speechSynthesis;
+  const utter = buildUtterance(text, voice);
+  // Android Chrome has a long-standing bug where calling cancel()
+  // immediately before speak() can drop the new utterance entirely —
+  // only cancel when something is actually queued/playing, and push the
+  // speak() call to the next tick so Android's engine has a moment to
+  // actually finish clearing the queue first.
+  if (synth.speaking || synth.pending) {
+    synth.cancel();
+    setTimeout(() => {
+      synth.resume();
+      synth.speak(utter);
+    }, 60);
+  } else {
+    synth.resume();
+    synth.speak(utter);
+  }
+}
+
 /**
  * Speaks `text` in a young-woman English voice. Fire-and-forget; failures
  * are silent (TTS is cosmetic, never blocks the call).
@@ -170,15 +190,11 @@ export function speakText(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
   try {
     if (cachedVoice !== undefined) {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(buildUtterance(text, cachedVoice));
+      speakNow(text, cachedVoice);
       return;
     }
     getFemaleVoice()
-      .then((voice) => {
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(buildUtterance(text, voice));
-      })
+      .then((voice) => speakNow(text, voice))
       .catch(() => {
         // best-effort — TTS failure shouldn't break the call flow
       });

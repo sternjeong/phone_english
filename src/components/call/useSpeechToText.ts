@@ -54,7 +54,7 @@ function getRecognitionCtor(): SpeechRecognitionCtor | null {
 // `onend` is Chrome ending the session against our wishes, so we
 // transparently start a fresh recognition instance and keep accumulating
 // into the same transcript — the UI never has to know it happened.
-const STOP_SAFETY_TIMEOUT_MS = 3000;
+const STOP_SAFETY_TIMEOUT_MS = 1500;
 
 /** Shared mutable state a recognition instance's handlers need to see —
  * bundled into one object instead of closing over hook-scoped bindings, so
@@ -145,9 +145,18 @@ export function useSpeechToText() {
     stoppingRef.current = false;
     const recognition = new Ctor();
     attachHandlers(recognition, ctx);
+    try {
+      recognition.start();
+    } catch {
+      // Some mobile browsers throw synchronously here (e.g. mic permission
+      // not fully settled yet) — without this, `listening` would flip true
+      // for a recognizer that never actually started, and the mic button
+      // would look "stuck on" with nothing to stop.
+      setListening(false);
+      return;
+    }
     recognitionRef.current = recognition;
     setListening(true);
-    recognition.start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
