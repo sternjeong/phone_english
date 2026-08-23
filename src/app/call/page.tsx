@@ -96,7 +96,7 @@ export default function CallPage() {
     preloadVoice();
   }, []);
 
-  const { supported: sttSupported, listening, start, stop } = useSpeechToText();
+  const { supported: sttSupported, listening, interim, micError, start, stop } = useSpeechToText();
 
   const personaState = useAsync(() => storage.getPersona(), []);
   const personaLoading = personaState.status === "loading";
@@ -526,9 +526,13 @@ export default function CallPage() {
                     🔘
                   </button>
                 </div>
-                {listening ? (
+                {micError ? (
+                  <div className="mx-auto max-w-[28ch] text-center text-xs text-coral-400">
+                    {micError}
+                  </div>
+                ) : listening ? (
                   <div className="text-center text-xs text-mint-500">
-                    듣고 있어요… 다시 누르면 전송돼요
+                    {interim ? `"${interim}"` : "듣고 있어요… 다시 누르면 전송돼요"}
                   </div>
                 ) : (
                   pendingUserId && (

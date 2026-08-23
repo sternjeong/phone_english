@@ -9,6 +9,21 @@ import { useCallback, useRef, useState } from "react";
  * every browser exposes this API (notably: no Firefox support), so
  * `.supported` lets callers fall back to a text input instead of
  * dead-ending the flow.
+ *
+ * Also exposes:
+ * - `interim` — the live, in-progress transcript while `listening` is
+ *   true. A live report said "recording happens but the conversation
+ *   never continues" with zero errors visible, which is exactly what an
+ *   *empty final transcript* looks like (call/page.tsx silently no-ops on
+ *   `if (transcript) ...`). Showing interim text turns "is it capturing
+ *   anything at all?" into something directly observable on-screen.
+ * - `micError` — a user-facing message when the mic permission itself is
+ *   the problem. The same report also mentioned the OS never even asked
+ *   for mic permission this time (unlike the first time it worked) — that
+ *   points at the permission being stuck in a denied/blocked state, which
+ *   `SpeechRecognition.start()` can fail on silently on some browsers. We
+ *   now explicitly request `getUserMedia` first specifically so a real,
+ *   catchable permission error surfaces instead of a silent no-op.
  */
 
 // Minimal shape of the parts of the SpeechRecognition API we use — TS's DOM
@@ -19,7 +34,7 @@ interface MinimalSpeechRecognition {
   interimResults: boolean;
   continuous: boolean;
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: ((event: unknown) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
@@ -39,22 +54,18 @@ function getRecognitionCtor(): SpeechRecognitionCtor | null {
   return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
 }
 
-// Chrome can end a recognition session on its own well before the user taps
-// to stop — most commonly a "no speech detected yet" timeout that can fire
-// just a few seconds after start(), even with `continuous: true`. Two bugs
-// came from this in practice:
-//  1. (fixed previously) if nothing was listening for `onend`, `stop()`'s
-//     promise hung forever because the browser had already ended the
-//     session before the user's second tap.
-//  2. (fixing now) naively treating *every* `onend` as "the user is done"
-//     made the mic silently stop capturing mid-sentence, before the user
-//     had even finished talking, whenever Chrome's own timeout fired first.
-// The fix for both: only *finalize* (resolve stop(), flip `listening` off)
-// on an `onend` that followed our own explicit `.stop()` call. Any other
-// `onend` is Chrome ending the session against our wishes, so we
-// transparently start a fresh recognition instance and keep accumulating
-// into the same transcript — the UI never has to know it happened.
 const STOP_SAFETY_TIMEOUT_MS = 1500;
+// If the browser ends the session on its own this many times in a row
+// without the transcript growing at all, stop trying to restart — a real
+// restart storm (some mobile Chrome builds don't actually support
+// `continuous: true` and end almost immediately every time) would otherwise
+// spin silently forever and never capture anything, with no sign to the
+// user beyond "nothing happens after I talk".
+const MAX_EMPTY_RESTARTS = 4;
+
+const MIC_BLOCKED_MESSAGE =
+  "마이크 권한이 꺼져있어요. 주소창의 자물쇠 아이콘(또는 사이트 정보) → 권한 → 마이크를 '허용'으로 바꾼 뒤 새로고침해주세요.";
+const MIC_ERROR_MESSAGE = "마이크에 접근할 수 없어요. 다른 앱이 마이크를 쓰고 있지 않은지 확인해주세요.";
 
 /** Shared mutable state a recognition instance's handlers need to see —
  * bundled into one object instead of closing over hook-scoped bindings, so
@@ -64,13 +75,20 @@ interface RecognitionCtx {
   recognitionRef: React.RefObject<MinimalSpeechRecognition | null>;
   sessionTranscriptRef: React.RefObject<string>;
   committedTranscriptRef: React.RefObject<string>;
+  emptyRestartsRef: React.RefObject<number>;
   stoppingRef: React.RefObject<boolean>;
   resolveStopRef: React.RefObject<((transcript: string) => void) | null>;
   setListening: (v: boolean) => void;
+  setInterim: (v: string) => void;
+  setMicError: (v: string | null) => void;
 }
 
 function fullTranscript(ctx: RecognitionCtx) {
   return `${ctx.committedTranscriptRef.current} ${ctx.sessionTranscriptRef.current}`.trim();
+}
+
+function log(...args: unknown[]) {
+  console.log("[stt]", ...args);
 }
 
 function attachHandlers(recognition: MinimalSpeechRecognition, ctx: RecognitionCtx) {
@@ -83,11 +101,19 @@ function attachHandlers(recognition: MinimalSpeechRecognition, ctx: RecognitionC
       combined += event.results[i][0]?.transcript ?? "";
     }
     ctx.sessionTranscriptRef.current = combined;
+    ctx.setInterim(fullTranscript(ctx));
+    log("onresult:", JSON.stringify(combined));
   };
-  recognition.onerror = () => {
-    // swallow — onend follows every onerror, which decides what happens next
+  recognition.onerror = (event) => {
+    log("onerror:", event?.error);
+    if (event?.error === "not-allowed" || event?.error === "service-not-allowed") {
+      ctx.setMicError(MIC_BLOCKED_MESSAGE);
+    } else if (event?.error === "audio-capture") {
+      ctx.setMicError(MIC_ERROR_MESSAGE);
+    }
   };
   recognition.onend = () => {
+    log("onend, stopping=", ctx.stoppingRef.current, "transcriptSoFar=", JSON.stringify(fullTranscript(ctx)));
     if (ctx.stoppingRef.current) {
       // The user actually asked to stop — finalize for real.
       ctx.stoppingRef.current = false;
@@ -98,10 +124,22 @@ function attachHandlers(recognition: MinimalSpeechRecognition, ctx: RecognitionC
       resolve?.(fullTranscript(ctx));
       return;
     }
-    // Chrome ended the session on its own (e.g. a no-speech timeout) while
-    // the user is still holding the mic "on" — keep what was heard so far
-    // and transparently pick back up instead of going silent.
-    ctx.committedTranscriptRef.current = fullTranscript(ctx);
+    // Chrome ended the session on its own (e.g. a no-speech timeout, or —
+    // on some mobile builds — just because `continuous` isn't honored)
+    // while the user is still holding the mic "on".
+    const before = fullTranscript(ctx);
+    if (ctx.sessionTranscriptRef.current.trim() === "") {
+      ctx.emptyRestartsRef.current += 1;
+    } else {
+      ctx.emptyRestartsRef.current = 0;
+    }
+    if (ctx.emptyRestartsRef.current > MAX_EMPTY_RESTARTS) {
+      log("giving up after", ctx.emptyRestartsRef.current, "empty restarts in a row");
+      ctx.setListening(false);
+      ctx.recognitionRef.current = null;
+      return;
+    }
+    ctx.committedTranscriptRef.current = before;
     ctx.sessionTranscriptRef.current = "";
     try {
       const Ctor = getRecognitionCtor();
@@ -110,8 +148,9 @@ function attachHandlers(recognition: MinimalSpeechRecognition, ctx: RecognitionC
       attachHandlers(next, ctx);
       ctx.recognitionRef.current = next;
       next.start();
-    } catch {
-      // Couldn't restart — better to end cleanly than hang silently "on".
+      log("auto-restarted, emptyRestarts=", ctx.emptyRestartsRef.current);
+    } catch (err) {
+      log("restart threw:", err);
       ctx.setListening(false);
       ctx.recognitionRef.current = null;
     }
@@ -120,9 +159,12 @@ function attachHandlers(recognition: MinimalSpeechRecognition, ctx: RecognitionC
 
 export function useSpeechToText() {
   const [listening, setListening] = useState(false);
+  const [interim, setInterim] = useState("");
+  const [micError, setMicError] = useState<string | null>(null);
   const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
   const sessionTranscriptRef = useRef(""); // this recognition instance only
   const committedTranscriptRef = useRef(""); // carried over across auto-restarts
+  const emptyRestartsRef = useRef(0);
   const stoppingRef = useRef(false);
   const resolveStopRef = useRef<((transcript: string) => void) | null>(null);
 
@@ -130,33 +172,67 @@ export function useSpeechToText() {
     recognitionRef,
     sessionTranscriptRef,
     committedTranscriptRef,
+    emptyRestartsRef,
     stoppingRef,
     resolveStopRef,
     setListening,
+    setInterim,
+    setMicError,
   };
 
   const supported = typeof window !== "undefined" && getRecognitionCtor() != null;
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     const Ctor = getRecognitionCtor();
-    if (!Ctor) return;
+    if (!Ctor) {
+      log("no SpeechRecognition constructor available");
+      return;
+    }
+    setMicError(null);
+
+    // Explicitly request mic access first, *before* handing off to
+    // SpeechRecognition. On some browsers SpeechRecognition.start() fails
+    // silently (no prompt, no usable error) when permission is already in
+    // a denied/blocked state — getUserMedia gives us a real, catchable
+    // NotAllowedError we can turn into an actual on-screen message instead
+    // of a mysterious "nothing happens".
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop()); // SpeechRecognition manages its own capture
+      } catch (err) {
+        const name = err instanceof DOMException ? err.name : "";
+        log("getUserMedia failed:", name || err);
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          setMicError(MIC_BLOCKED_MESSAGE);
+        } else {
+          setMicError(MIC_ERROR_MESSAGE);
+        }
+        return;
+      }
+    }
+
     committedTranscriptRef.current = "";
     sessionTranscriptRef.current = "";
+    emptyRestartsRef.current = 0;
     stoppingRef.current = false;
+    setInterim("");
     const recognition = new Ctor();
     attachHandlers(recognition, ctx);
     try {
       recognition.start();
-    } catch {
+    } catch (err) {
       // Some mobile browsers throw synchronously here (e.g. mic permission
       // not fully settled yet) — without this, `listening` would flip true
       // for a recognizer that never actually started, and the mic button
       // would look "stuck on" with nothing to stop.
+      log("start() threw synchronously:", err);
       setListening(false);
       return;
     }
     recognitionRef.current = recognition;
     setListening(true);
+    log("started");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -166,12 +242,14 @@ export function useSpeechToText() {
       if (!recognition) {
         // Nothing running (e.g. a restart attempt just failed) — hand back
         // whatever was captured before that happened.
+        log("stop() called with nothing running, resolving with", JSON.stringify(fullTranscript(ctx)));
         setListening(false);
         resolve(fullTranscript(ctx));
         return;
       }
       stoppingRef.current = true;
       const safety = setTimeout(() => {
+        log("stop() safety timeout fired, resolving with", JSON.stringify(fullTranscript(ctx)));
         stoppingRef.current = false;
         setListening(false);
         recognitionRef.current = null;
@@ -184,8 +262,9 @@ export function useSpeechToText() {
       };
       try {
         recognition.stop();
-      } catch {
+      } catch (err) {
         // Already in a stopped/invalid state — onend won't fire again.
+        log("recognition.stop() threw:", err);
         clearTimeout(safety);
         stoppingRef.current = false;
         resolveStopRef.current = null;
@@ -197,5 +276,5 @@ export function useSpeechToText() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { supported, listening, start, stop };
+  return { supported, listening, interim, micError, start, stop };
 }
