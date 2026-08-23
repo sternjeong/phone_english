@@ -14,6 +14,7 @@ type ConverseRequest = {
   topic: Topic;
   history: ChatMessage[];
   userUtterance: string;
+  memory?: string[];
 };
 
 type ConverseResponse = {
@@ -29,12 +30,17 @@ const TOPIC_LABEL: Record<Topic, string> = {
 };
 
 export async function POST(req: NextRequest) {
-  const { persona, topic, history, userUtterance } = (await req.json()) as ConverseRequest;
+  const { persona, topic, history, userUtterance, memory } = (await req.json()) as ConverseRequest;
+
+  const memorySection =
+    memory && memory.length > 0
+      ? `\nWhat you remember about the learner from past calls (bring it up naturally if relevant, don't recite it as a list):\n${memory.map((m) => `- ${m}`).join("\n")}\n`
+      : "";
 
   const systemPrompt = `You are ${persona.name}, a warm native-English-speaking phone friend calling a Korean English learner to practice conversation.
 Personality: ${persona.personality}. Shared interests: ${persona.interests.join(", ")}.
 Current topic focus: ${TOPIC_LABEL[topic]}.
-Keep replies short (1-3 sentences), casual, and always end with something that invites the learner to keep talking.
+${memorySection}Keep replies short (1-3 sentences), casual, and always end with something that invites the learner to keep talking.
 Always respond ONLY as strict JSON matching this TypeScript type, no prose outside the JSON:
 {
   "paraphrase": { "status": "approved" | "corrected", "corrected"?: string, "reason"?: string },

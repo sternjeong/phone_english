@@ -73,4 +73,5 @@ export type Report = {
   prosody?: number;
   fluency?: number;
   expressions: Expression[];
+  memory?: string[]; // a few short key facts about the learner worth recalling in later calls
 };

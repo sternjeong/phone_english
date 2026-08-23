@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PhoneShell } from "@/components/ui/PhoneShell";
 import { Backdrop } from "@/components/ui/Backdrop";
@@ -45,6 +45,7 @@ async function callConverse(body: {
   topic: Topic;
   history: ChatMessage[];
   userUtterance: string;
+  memory?: string[];
 }): Promise<ConverseResult> {
   const res = await fetch("/api/converse", {
     method: "POST",
@@ -103,6 +104,23 @@ export default function CallPage() {
   }
   const persona = personaState.status === "ready" ? personaState.data ?? DEFAULT_PERSONA : DEFAULT_PERSONA;
 
+  // A handful of short facts carried over from past calls (see
+  // src/app/api/report/route.ts's "memory" field) — the AI keeps light
+  // continuity with the learner without ever re-reading old transcripts.
+  const MAX_MEMORY_ITEMS = 6;
+  const RECENT_REPORTS_FOR_MEMORY = 5;
+  const reportsState = useAsync(() => storage.getReports(), []);
+  const memory = useMemo(
+    () =>
+      reportsState.status === "ready"
+        ? reportsState.data
+            .slice(0, RECENT_REPORTS_FOR_MEMORY)
+            .flatMap((r) => r.memory ?? [])
+            .slice(0, MAX_MEMORY_ITEMS)
+        : [],
+    [reportsState]
+  );
+
   useEffect(() => {
     if (personaLoading) return;
     // Warm up the voice lookup now, in parallel with the greeting request,
@@ -151,6 +169,7 @@ export default function CallPage() {
         topic,
         history: [],
         userUtterance: GREETING_PROMPT,
+        memory,
       });
       const aiMsg: ChatMessage = {
         id: newId(),
@@ -170,7 +189,7 @@ export default function CallPage() {
     } finally {
       setGreetingLoading(false);
     }
-  }, [persona, topic]);
+  }, [persona, topic, memory]);
 
   // Canonical data-fetching-on-mount effect (kicks off a request and sets
   // loading state) — waits for the persona fetch to resolve (or fail) so
@@ -237,6 +256,7 @@ export default function CallPage() {
           topic,
           history: historySnapshot,
           userUtterance: trimmed,
+          memory,
         });
         const aiMsg: ChatMessage = {
           id: newId(),
@@ -262,7 +282,7 @@ export default function CallPage() {
         setPendingUserId(null);
       }
     },
-    [persona, topic]
+    [persona, topic, memory]
   );
 
   const retryConvo = () => {
@@ -316,6 +336,7 @@ export default function CallPage() {
 
     let title = "오늘의 통화";
     let expressions: Report["expressions"] = [];
+    let memoryFacts: string[] = [];
     try {
       const res = await fetch("/api/report", {
         method: "POST",
@@ -326,6 +347,7 @@ export default function CallPage() {
         const data = await res.json();
         title = data.title ?? title;
         expressions = data.expressions ?? [];
+        memoryFacts = data.memory ?? [];
       }
     } catch {
       // fall back silently — report route unreachable (e.g. no API key yet)
@@ -347,6 +369,7 @@ export default function CallPage() {
       prosody: stubScore(),
       fluency: stubScore(),
       expressions,
+      memory: memoryFacts,
     };
     storage.saveReport(report);
     storage.addWords(wordCount);

@@ -12,7 +12,7 @@ import { ChatMessage, Expression } from "@/lib/types";
  */
 
 type ReportRequest = { messages: ChatMessage[] };
-type ReportResponse = { title: string; expressions: Expression[] };
+type ReportResponse = { title: string; expressions: Expression[]; memory: string[] };
 
 export async function POST(req: NextRequest) {
   const { messages } = (await req.json()) as ReportRequest;
@@ -31,7 +31,11 @@ Return ONLY strict JSON matching this TypeScript type:
     "exampleEn": string,    // an example sentence using it (can reuse/adapt something from the transcript)
     "exampleKo": string,    // Korean translation of the example
     "highlight": string     // the exact substring of exampleEn to highlight (the phrase itself as it appears in exampleEn)
-  }[]                        // 3 to 7 expressions, drawn from what the USER actually struggled with or could upgrade
+  }[],                       // 3 to 7 expressions, drawn from what the USER actually struggled with or could upgrade
+  "memory": string[]         // 0 to 3 short factual sentences worth remembering about the learner for future calls
+                              // (e.g. "Has a job interview next week", "Learning guitar", "Has a dog named Coco").
+                              // Only real facts the USER stated about themselves — never assumptions, never scores,
+                              // never anything about the AI's own performance. Empty array if nothing memorable came up.
 }`;
 
   try {
