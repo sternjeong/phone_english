@@ -81,7 +81,12 @@ export default function CallPage() {
 
   const [textFallback, setTextFallback] = useState("");
   const [elapsed, setElapsed] = useState(0);
-  const [summary, setSummary] = useState<{ wordCount: number; reportId: string } | null>(null);
+  const [summary, setSummary] = useState<{
+    wordCount: number;
+    reportId: string;
+    title: string;
+    expressions: Report["expressions"];
+  } | null>(null);
 
   // 기본 통화 시간 5분, "더 통화할까요?" 프롬프트에서 예 누르면 3분씩 연장.
   const [timeLimit, setTimeLimit] = useState(DEFAULT_CALL_SECONDS);
@@ -315,6 +320,17 @@ export default function CallPage() {
     start();
   };
 
+  // A dedicated finish action is more reliable than asking a learner to
+  // infer the recording state from the microphone icon, especially on iOS
+  // where the recognition end event can arrive late.
+  const handleFinishSpeaking = async () => {
+    if (!listening || pendingUserId) return;
+    const transcript = await stop();
+    if (transcript.trim()) {
+      sendUtterance(transcript, messages);
+    }
+  };
+
   const handleTextSubmit = () => {
     if (!textFallback.trim() || pendingUserId) return;
     sendUtterance(textFallback, messages);
@@ -380,12 +396,8 @@ export default function CallPage() {
     storage.saveReport(report);
     storage.addWords(wordCount);
 
-    setSummary({ wordCount, reportId: report.id });
+    setSummary({ wordCount, reportId: report.id, title, expressions });
     setPhase("summary");
-
-    setTimeout(() => {
-      router.push(`/reports/${report.id}`);
-    }, 2200);
   };
 
   if (personaLoading) {
@@ -406,18 +418,29 @@ export default function CallPage() {
   return (
     <PhoneShell tone="ink">
       {phase === "summary" && summary ? (
-        <div className="flex h-full flex-col items-center justify-center gap-4 bg-ink-950">
+        <div className="flex h-full flex-col items-center justify-center gap-4 bg-ink-950 px-6 text-center">
+          <div className="text-sm text-ink-400">오늘의 통화 요약</div>
           <div className="text-7xl font-bold text-mint-500 drop-shadow-[0_0_24px_rgba(53,214,140,0.55)]">
             {summary.wordCount}
           </div>
           <div className="rounded-full bg-ink-800 px-4 py-1.5 text-sm text-ink-100">
             🔥 내가 말한 단어
           </div>
+          <div className="mt-3 w-full rounded-2xl border border-ink-700 bg-ink-900 p-4 text-left">
+            <div className="text-sm font-semibold text-ink-100">{summary.title}</div>
+            {summary.expressions[0] ? (
+              <div className="mt-2 text-xs text-ink-400">
+                오늘 복습할 표현 · <span className="text-mint-500">{summary.expressions[0].phrase}</span>
+              </div>
+            ) : (
+              <div className="mt-2 text-xs text-ink-400">오늘 대화를 끝까지 이어냈어요.</div>
+            )}
+          </div>
           <button
             onClick={() => router.push(`/reports/${summary.reportId}`)}
-            className="mt-6 rounded-full bg-ink-100 px-6 py-2 text-sm font-medium text-ink-950"
+            className="mt-3 w-full rounded-full bg-ink-100 px-6 py-3 text-sm font-semibold text-ink-950"
           >
-            다음
+            자세한 리포트 보기
           </button>
         </div>
       ) : phase === "ending" ? (
@@ -566,12 +589,21 @@ export default function CallPage() {
                     {micError}
                   </div>
                 ) : listening ? (
-                  <div className="text-center text-xs text-mint-500">
-                    {interim ? `"${interim}"` : "듣고 있어요… 다시 누르면 전송돼요"}
+                  <div className="flex flex-col items-center gap-2 text-center text-xs text-mint-500">
+                    <div>{interim ? `"${interim}"` : "음성을 인식하고 있어요…"}</div>
+                    <button
+                      onClick={handleFinishSpeaking}
+                      className="rounded-full bg-mint-500 px-4 py-2 text-sm font-semibold text-ink-950"
+                    >
+                      말하기 완료
+                    </button>
                   </div>
                 ) : (
                   pendingUserId && (
-                    <div className="text-center text-xs text-ink-400">응답을 기다리는 중…</div>
+                    <div className="flex items-center justify-center gap-2 text-center text-xs text-ink-400" role="status">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-mint-500" />
+                      AI가 답변을 만들고 있어요…
+                    </div>
                   )
                 )}
               </div>
