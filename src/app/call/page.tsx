@@ -509,13 +509,15 @@ export default function CallPage() {
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                {!sttSupported && (
+                {(!sttSupported || micError) && (
                   <div className="flex items-center gap-2">
                     <input
                       value={textFallback}
                       onChange={(e) => setTextFallback(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleTextSubmit()}
-                      placeholder="음성 인식이 지원되지 않아요 — 텍스트로 입력하세요"
+                      placeholder={
+                        sttSupported ? "인식 결과를 직접 입력해 전송하세요" : "음성 인식이 지원되지 않아요 — 텍스트로 입력하세요"
+                      }
                       className="flex-1 rounded-full border border-ink-700 bg-ink-900 px-4 py-2 text-sm text-ink-100 placeholder:text-ink-400"
                     />
                     <button

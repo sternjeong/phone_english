@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * Thin wrapper around the browser's SpeechRecognition (Web Speech API).
@@ -21,9 +21,8 @@ import { useCallback, useRef, useState } from "react";
  *   the problem. The same report also mentioned the OS never even asked
  *   for mic permission this time (unlike the first time it worked) — that
  *   points at the permission being stuck in a denied/blocked state, which
- *   `SpeechRecognition.start()` can fail on silently on some browsers. We
- *   now explicitly request `getUserMedia` first specifically so a real,
- *   catchable permission error surfaces instead of a silent no-op.
+ *   `SpeechRecognition.start()` can fail silently on some browsers. Its
+ *   error event is therefore always surfaced as an on-screen message.
  */
 
 // Minimal shape of the parts of the SpeechRecognition API we use — TS's DOM
@@ -66,6 +65,7 @@ const MAX_EMPTY_RESTARTS = 4;
 const MIC_BLOCKED_MESSAGE =
   "마이크 권한이 꺼져있어요. 주소창의 자물쇠 아이콘(또는 사이트 정보) → 권한 → 마이크를 '허용'으로 바꾼 뒤 새로고침해주세요.";
 const MIC_ERROR_MESSAGE = "마이크에 접근할 수 없어요. 다른 앱이 마이크를 쓰고 있지 않은지 확인해주세요.";
+const NO_SPEECH_MESSAGE = "음성을 인식하지 못했어요. 다시 눌러 천천히 말하거나 텍스트로 입력해주세요.";
 
 /** Shared mutable state a recognition instance's handlers need to see —
  * bundled into one object instead of closing over hook-scoped bindings, so
@@ -108,8 +108,14 @@ function attachHandlers(recognition: MinimalSpeechRecognition, ctx: RecognitionC
     log("onerror:", event?.error);
     if (event?.error === "not-allowed" || event?.error === "service-not-allowed") {
       ctx.setMicError(MIC_BLOCKED_MESSAGE);
+      // Retrying cannot repair a denied site permission. Let onend settle
+      // the UI instead of entering an invisible restart loop.
+      ctx.stoppingRef.current = true;
     } else if (event?.error === "audio-capture") {
       ctx.setMicError(MIC_ERROR_MESSAGE);
+      ctx.stoppingRef.current = true;
+    } else if (event?.error !== "aborted") {
+      ctx.setMicError(NO_SPEECH_MESSAGE);
     }
   };
   recognition.onend = () => {
@@ -136,6 +142,7 @@ function attachHandlers(recognition: MinimalSpeechRecognition, ctx: RecognitionC
     if (ctx.emptyRestartsRef.current > MAX_EMPTY_RESTARTS) {
       log("giving up after", ctx.emptyRestartsRef.current, "empty restarts in a row");
       ctx.setListening(false);
+      ctx.setMicError(NO_SPEECH_MESSAGE);
       ctx.recognitionRef.current = null;
       return;
     }
@@ -182,35 +189,13 @@ export function useSpeechToText() {
 
   const supported = typeof window !== "undefined" && getRecognitionCtor() != null;
 
-  const start = useCallback(async () => {
+  const start = useCallback(() => {
     const Ctor = getRecognitionCtor();
     if (!Ctor) {
       log("no SpeechRecognition constructor available");
       return;
     }
     setMicError(null);
-
-    // Explicitly request mic access first, *before* handing off to
-    // SpeechRecognition. On some browsers SpeechRecognition.start() fails
-    // silently (no prompt, no usable error) when permission is already in
-    // a denied/blocked state — getUserMedia gives us a real, catchable
-    // NotAllowedError we can turn into an actual on-screen message instead
-    // of a mysterious "nothing happens".
-    if (navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((t) => t.stop()); // SpeechRecognition manages its own capture
-      } catch (err) {
-        const name = err instanceof DOMException ? err.name : "";
-        log("getUserMedia failed:", name || err);
-        if (name === "NotAllowedError" || name === "SecurityError") {
-          setMicError(MIC_BLOCKED_MESSAGE);
-        } else {
-          setMicError(MIC_ERROR_MESSAGE);
-        }
-        return;
-      }
-    }
 
     committedTranscriptRef.current = "";
     sessionTranscriptRef.current = "";
@@ -219,6 +204,12 @@ export function useSpeechToText() {
     setInterim("");
     const recognition = new Ctor();
     attachHandlers(recognition, ctx);
+    // iOS Safari requires this to remain in the original tap's synchronous
+    // call stack. Awaiting getUserMedia first loses user activation and can
+    // make recognition fail without ever opening the microphone.
+    // Keep the ref before start(): Safari may synchronously emit end/error.
+    recognitionRef.current = recognition;
+    setListening(true);
     try {
       recognition.start();
     } catch (err) {
@@ -228,12 +219,24 @@ export function useSpeechToText() {
       // would look "stuck on" with nothing to stop.
       log("start() threw synchronously:", err);
       setListening(false);
+      recognitionRef.current = null;
+      setMicError(MIC_ERROR_MESSAGE);
       return;
     }
-    recognitionRef.current = recognition;
-    setListening(true);
     log("started");
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stoppingRef.current = true;
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // The recognizer may already have stopped.
+      }
+      recognitionRef.current = null;
+    };
   }, []);
 
   const stop = useCallback((): Promise<string> => {
@@ -250,6 +253,9 @@ export function useSpeechToText() {
       stoppingRef.current = true;
       const safety = setTimeout(() => {
         log("stop() safety timeout fired, resolving with", JSON.stringify(fullTranscript(ctx)));
+        // A late iOS `end` must not be treated as an unexpected end and
+        // restart the microphone after the utterance was already submitted.
+        recognition.onend = null;
         stoppingRef.current = false;
         setListening(false);
         recognitionRef.current = null;
@@ -266,6 +272,7 @@ export function useSpeechToText() {
         // Already in a stopped/invalid state — onend won't fire again.
         log("recognition.stop() threw:", err);
         clearTimeout(safety);
+        recognition.onend = null;
         stoppingRef.current = false;
         resolveStopRef.current = null;
         setListening(false);
