@@ -101,6 +101,16 @@ export function ensureSchema(): Promise<void> {
         )
       `;
       await sql`CREATE INDEX IF NOT EXISTS archive_sentences_user_id_idx ON archive_sentences (user_id)`;
+      await sql`
+        CREATE TABLE IF NOT EXISTS vocabulary_items (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          report_id TEXT NOT NULL,
+          data JSONB NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await sql`CREATE INDEX IF NOT EXISTS vocabulary_items_user_id_idx ON vocabulary_items (user_id)`;
     })();
   }
   return schemaReady;

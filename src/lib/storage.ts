@@ -1,6 +1,6 @@
 "use client";
 
-import { CallSession, Persona, Report } from "./types";
+import { CallSession, Persona, Report, VocabularyItem } from "./types";
 
 /**
  * Server-backed persistence (Postgres via /api/data/**, scoped to the
@@ -67,4 +67,9 @@ export const storage = {
   getWordStreak: () => getJSON<Record<string, number>>("/api/data/streak"),
   addWords: (count: number, date = new Date().toISOString().slice(0, 10)) =>
     postJSON("/api/data/streak", { words: count, date }),
+
+  getVocabulary: () => getJSON<VocabularyItem[]>("/api/data/vocabulary"),
+  saveVocabulary: (items: VocabularyItem[]) => postJSON("/api/data/vocabulary", { items }),
+  updateVocabulary: (item: VocabularyItem) => putJSON(`/api/data/vocabulary/${item.id}`, item),
+  deleteVocabulary: (id: string) => deleteJSON(`/api/data/vocabulary/${id}`),
 };

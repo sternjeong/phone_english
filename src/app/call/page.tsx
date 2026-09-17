@@ -11,7 +11,7 @@ import { storage } from "@/lib/storage";
 import { useClientValue } from "@/lib/useClientValue";
 import { useAsync } from "@/lib/useAsync";
 import { speakText, preloadVoice, unlockSpeechSynthesis } from "@/lib/tts";
-import type { ChatMessage, Persona, Topic, CallSession, Report } from "@/lib/types";
+import type { ChatMessage, Persona, Topic, CallSession, Report, VocabularyItem } from "@/lib/types";
 
 const DEFAULT_CALL_SECONDS = 5 * 60;
 const EXTEND_SECONDS = 3 * 60;
@@ -86,6 +86,7 @@ export default function CallPage() {
     reportId: string;
     title: string;
     expressions: Report["expressions"];
+    vocabulary: VocabularyItem[];
   } | null>(null);
 
   // 기본 통화 시간 5분, "더 통화할까요?" 프롬프트에서 예 누르면 3분씩 연장.
@@ -396,7 +397,26 @@ export default function CallPage() {
     storage.saveReport(report);
     storage.addWords(wordCount);
 
-    setSummary({ wordCount, reportId: report.id, title, expressions });
+    // Corrections from the learner's actual wording become a personal
+    // vocabulary list automatically; no generic AI phrases are mixed in.
+    const vocabulary: VocabularyItem[] = messages.flatMap((message) => {
+      const replacement = message.paraphrase?.corrected?.trim();
+      if (message.role !== "user" || !replacement) return [];
+      return [{
+        id: newId(),
+        reportId: report.id,
+        original: message.textEn,
+        replacement,
+        reason: message.paraphrase?.reason,
+        meaningKo: message.paraphrase?.reason ?? "더 자연스러운 영어 표현",
+        exampleEn: replacement,
+        createdAt: Date.now(),
+        reviewed: false,
+      }];
+    });
+    if (vocabulary.length > 0) storage.saveVocabulary(vocabulary);
+
+    setSummary({ wordCount, reportId: report.id, title, expressions, vocabulary });
     setPhase("summary");
   };
 
@@ -436,11 +456,25 @@ export default function CallPage() {
               <div className="mt-2 text-xs text-ink-400">오늘 대화를 끝까지 이어냈어요.</div>
             )}
           </div>
+          {summary.vocabulary[0] && (
+            <div className="w-full rounded-2xl border border-mint-500/30 bg-mint-500/10 p-4 text-left">
+              <div className="text-xs text-mint-500">오늘의 Voca</div>
+              <div className="mt-1 text-sm text-ink-400 line-through">{summary.vocabulary[0].original}</div>
+              <div className="mt-1 text-base font-semibold text-ink-100">{summary.vocabulary[0].replacement}</div>
+              <div className="mt-1 text-xs text-ink-400">자동으로 내 단어장에 저장했어요.</div>
+            </div>
+          )}
           <button
             onClick={() => router.push(`/reports/${summary.reportId}`)}
             className="mt-3 w-full rounded-full bg-ink-100 px-6 py-3 text-sm font-semibold text-ink-950"
           >
             자세한 리포트 보기
+          </button>
+          <button
+            onClick={() => router.push("/voca")}
+            className="text-sm font-medium text-mint-500"
+          >
+            내 Voca 보기
           </button>
         </div>
       ) : phase === "ending" ? (

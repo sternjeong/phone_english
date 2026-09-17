@@ -96,11 +96,11 @@ export default function HomePage() {
         )}
 
         <Link
-          href="/stats"
+          href="/voca"
           className="flex flex-col items-center gap-1 text-ink-400 transition hover:text-ink-100"
         >
           <WaveIcon />
-          <span className="text-[11px]">학습</span>
+          <span className="text-[11px]">Voca</span>
         </Link>
       </div>
     </PhoneShell>

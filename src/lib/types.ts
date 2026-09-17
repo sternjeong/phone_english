@@ -75,3 +75,16 @@ export type Report = {
   expressions: Expression[];
   memory?: string[]; // a few short key facts about the learner worth recalling in later calls
 };
+
+/** A correction captured from the learner's own speech for spaced review. */
+export type VocabularyItem = {
+  id: string;
+  reportId: string;
+  original: string;
+  replacement: string;
+  reason?: string;
+  meaningKo: string;
+  exampleEn: string;
+  createdAt: number;
+  reviewed: boolean;
+};
