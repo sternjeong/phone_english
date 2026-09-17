@@ -15,6 +15,7 @@ import type { ChatMessage, Persona, Topic, CallSession, Report } from "@/lib/typ
 
 const DEFAULT_CALL_SECONDS = 5 * 60;
 const EXTEND_SECONDS = 3 * 60;
+const EXTEND_PROMPT_REMAINING_SECONDS = 60;
 
 const DEFAULT_PERSONA: Persona = {
   id: "default",
@@ -135,29 +136,34 @@ export default function CallPage() {
     false
   );
 
-  // Timer, ticking while the call is live.
+  // Timer, ticking only while the user is actually on the call. Keeping
+  // the incoming screen at 05:00 avoids consuming call time before 받기.
   useEffect(() => {
-    if (phase === "ending" || phase === "summary") return;
+    if (phase !== "active") return;
     const id = setInterval(() => {
       setElapsed(Math.floor((Date.now() - callStartRef.current) / 1000));
     }, 1000);
     return () => clearInterval(id);
   }, [phase]);
 
-  // 기본 통화 5분이 지나면 "더 통화할까요?" 오버레이를 띄운다. 한 번 물어본
+  const remainingSeconds = Math.max(0, timeLimit - elapsed);
+  const mm = String(Math.floor(remainingSeconds / 60)).padStart(2, "0");
+  const ss = String(remainingSeconds % 60).padStart(2, "0");
+
+  // 종료 1분 전에 "더 통화할까요?" 오버레이를 띄운다. 한 번 물어본
   // 한도(extendPromptShownFor)는 다시 안 묻도록 기록해둔다 — setInterval이
-  // 초 단위로 계속 도는 동안 elapsed가 timeLimit을 넘긴 매 틱마다 다시
+  // 초 단위로 계속 도는 동안 남은 시간이 임계값 아래인 매 틱마다 다시
   // 열리는 걸 막기 위함.
   useEffect(() => {
     if (phase !== "active") return;
-    if (elapsed >= timeLimit && extendPromptShownFor.current !== timeLimit) {
+    if (
+      remainingSeconds <= EXTEND_PROMPT_REMAINING_SECONDS &&
+      extendPromptShownFor.current !== timeLimit
+    ) {
       extendPromptShownFor.current = timeLimit;
       setExtendPromptOpen(true);
     }
-  }, [elapsed, timeLimit, phase]);
-
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-  const ss = String(elapsed % 60).padStart(2, "0");
+  }, [remainingSeconds, timeLimit, phase]);
 
   // Phase 1: fetch the AI's opening greeting.
   const fetchGreeting = useCallback(async () => {
@@ -587,7 +593,7 @@ export default function CallPage() {
             <Backdrop className="z-20 bg-black/70 px-8">
               <div className="w-full max-w-xs rounded-2xl border border-ink-700 bg-ink-900 p-6 text-center">
                 <p className="mb-1 text-base font-semibold text-ink-100">
-                  {Math.floor(timeLimit / 60)}분이 지났어요
+                  1분 남았어요
                 </p>
                 <p className="mb-5 text-sm text-ink-400">
                   {Math.floor(EXTEND_SECONDS / 60)}분 더 통화할까요?

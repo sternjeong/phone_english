@@ -123,7 +123,7 @@ export async function chatJSON<T>(systemPrompt: string, history: ChatTurn[]): Pr
               // Replies are meant to be 1-3 short sentences — a small
               // ceiling stops the model from ever generating (and us
               // waiting on) a long tail response.
-              maxOutputTokens: 400,
+              maxOutputTokens: 240,
             },
           },
           Math.max(1000, Math.min(ATTEMPT_TIMEOUT_MS, deadline - Date.now()))

@@ -22,6 +22,11 @@ type ConverseResponse = {
   aiReply: { textEn: string; textKo: string };
 };
 
+// Long conversations do not need their entire transcript sent again on
+// every turn. Recent context preserves natural replies while keeping token
+// processing and mobile round-trip time bounded.
+const MAX_HISTORY_MESSAGES = 12;
+
 const TOPIC_LABEL: Record<Topic, string> = {
   me: "나의 성격과 가치관을 알아보는 질문",
   career: "커리어에 대한 질문",
@@ -50,7 +55,7 @@ For "paraphrase": if the learner's last line was already natural, set status "ap
 If it was awkward, unnatural, or grammatically off, set status "corrected", give a more native-sounding rewrite in "corrected", and a one-line Korean "reason" explaining the fix.
 For "aiReply": continue the phone call naturally in character. "textKo" is a natural Korean translation of "textEn".`;
 
-  const historyMessages = history.map((m) => ({
+  const historyMessages = history.slice(-MAX_HISTORY_MESSAGES).map((m) => ({
     role: (m.role === "ai" ? "model" : "user") as "model" | "user",
     content: m.textEn,
   }));

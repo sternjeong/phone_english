@@ -19,11 +19,9 @@ function useTypewriter(text: string, active: boolean, onDone?: () => void) {
     }
     setShown("");
     let i = 0;
-    // Sized so the reveal takes ~450ms total regardless of reply length —
-    // long enough to read as "typing", short enough not to add perceptible
-    // delay on top of the network round trip (part of the latency pass;
-    // this used to be a flat ~1.1s no matter how short the reply was).
-    const step = Math.max(1, Math.round(text.length / 35));
+    // Keep the conversational typing cue, but reveal the completed answer
+    // quickly enough that it does not feel like another network wait.
+    const step = Math.max(1, Math.round(text.length / 15));
     const id = setInterval(() => {
       i += step;
       setShown(text.slice(0, i));
