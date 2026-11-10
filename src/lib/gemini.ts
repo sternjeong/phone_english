@@ -71,13 +71,19 @@ function shouldFailover(status: number) {
   return status === 429 || status === 503;
 }
 
-async function fetchWithTimeout(url: string, body: unknown, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  apiKey: string,
+  body: unknown,
+  timeoutMs: number
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Header rather than `?key=` so the key never ends up in URL logs.
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -86,13 +92,31 @@ async function fetchWithTimeout(url: string, body: unknown, timeoutMs: number): 
   }
 }
 
+type ChatOptions = {
+  // Live call replies are 1-3 short sentences, so the default ceiling is
+  // small — it stops the model from ever generating (and us waiting on) a
+  // long tail. The post-call report returns several expressions plus
+  // memory facts and needs far more room, or its JSON gets cut off
+  // mid-string and fails to parse.
+  maxOutputTokens?: number;
+  attemptTimeoutMs?: number;
+  overallDeadlineMs?: number;
+};
+
 /**
- * `systemPrompt` becomes Gemini's systemInstruction. `history` + `latest`
- * become the contents array. Response is forced to JSON via
- * responseMimeType, matching the JSON-object contract our API routes rely
- * on (mirrors how src/lib/openai.ts used to work, so callers don't change).
+ * `systemPrompt` becomes Gemini's systemInstruction. `history` becomes the
+ * contents array. Response is forced to JSON via responseMimeType, matching
+ * the JSON-object contract our API routes rely on.
  */
-export async function chatJSON<T>(systemPrompt: string, history: ChatTurn[]): Promise<T> {
+export async function chatJSON<T>(
+  systemPrompt: string,
+  history: ChatTurn[],
+  {
+    maxOutputTokens = 240,
+    attemptTimeoutMs = ATTEMPT_TIMEOUT_MS,
+    overallDeadlineMs = OVERALL_DEADLINE_MS,
+  }: ChatOptions = {}
+): Promise<T> {
   const keys = apiKeys();
   if (keys.length === 0) {
     throw new GeminiConfigError(
@@ -102,7 +126,7 @@ export async function chatJSON<T>(systemPrompt: string, history: ChatTurn[]): Pr
 
   const models = orderedModels();
   let lastError: Error | null = null;
-  const deadline = Date.now() + OVERALL_DEADLINE_MS;
+  const deadline = Date.now() + overallDeadlineMs;
 
   outer: for (const model of models) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.name}:generateContent`;
@@ -112,7 +136,8 @@ export async function chatJSON<T>(systemPrompt: string, history: ChatTurn[]): Pr
       let res: Response;
       try {
         res = await fetchWithTimeout(
-          `${url}?key=${apiKey}`,
+          url,
+          apiKey,
           {
             systemInstruction: { parts: [{ text: systemPrompt }] },
             contents: history.map((t) => ({ role: t.role, parts: [{ text: t.content }] })),
@@ -120,13 +145,10 @@ export async function chatJSON<T>(systemPrompt: string, history: ChatTurn[]): Pr
               temperature: 0.8,
               responseMimeType: "application/json",
               thinkingConfig: model.thinkingConfig,
-              // Replies are meant to be 1-3 short sentences — a small
-              // ceiling stops the model from ever generating (and us
-              // waiting on) a long tail response.
-              maxOutputTokens: 240,
+              maxOutputTokens,
             },
           },
-          Math.max(1000, Math.min(ATTEMPT_TIMEOUT_MS, deadline - Date.now()))
+          Math.max(1000, Math.min(attemptTimeoutMs, deadline - Date.now()))
         );
       } catch (err) {
         // AbortError (our own timeout) or a network failure — either way,
@@ -148,7 +170,14 @@ export async function chatJSON<T>(systemPrompt: string, history: ChatTurn[]): Pr
         lastError = new Error(`Gemini returned no content from ${model.name}`);
         continue;
       }
-      return JSON.parse(text) as T;
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        // Truncated (MAX_TOKENS) or otherwise malformed JSON — another
+        // model/key may well produce a valid response, so keep going.
+        lastError = new Error(`Gemini returned invalid JSON from ${model.name}`);
+        continue;
+      }
     }
   }
 

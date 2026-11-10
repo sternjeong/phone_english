@@ -39,6 +39,8 @@ export default function SchedulePage() {
   const [editing, setEditing] = useState(false);
 
   function handleSave(newTime: string) {
+    // Clearing the native time input yields "" — keep the previous time.
+    if (!newTime) return;
     setOverride(newTime);
     setPreferredTime(newTime);
     setEditing(false);

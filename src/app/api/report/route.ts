@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/apiAuth";
 import { chatJSON, GeminiConfigError } from "@/lib/gemini";
 import { ChatMessage, Expression } from "@/lib/types";
 
@@ -11,11 +12,23 @@ import { ChatMessage, Expression } from "@/lib/types";
  * heuristic; see the practice/report screens for that.
  */
 
+// Gives chatJSON's 30s overall deadline (below) headroom on platforms that
+// enforce a shorter default function timeout.
+export const maxDuration = 45;
+
 type ReportRequest = { messages: ChatMessage[] };
 type ReportResponse = { title: string; expressions: Expression[]; memory: string[] };
 
 export async function POST(req: NextRequest) {
-  const { messages } = (await req.json()) as ReportRequest;
+  // The proxy matcher skips /api, so this route must guard itself.
+  const userId = await requireUser();
+  if (userId instanceof NextResponse) return userId;
+
+  const body = (await req.json().catch(() => null)) as ReportRequest | null;
+  if (!body || !Array.isArray(body.messages)) {
+    return NextResponse.json({ error: "invalid request" }, { status: 400 });
+  }
+  const { messages } = body;
   const transcript = messages
     .map((m) => `${m.role === "ai" ? "AI" : "USER"}: ${m.textEn}`)
     .join("\n");
@@ -41,7 +54,14 @@ Return ONLY strict JSON matching this TypeScript type:
   try {
     const result = await chatJSON<ReportResponse>(systemPrompt, [
       { role: "user", content: transcript || "(empty call)" },
-    ]);
+    ], {
+      // Several expressions + memory facts as JSON — far more than a live
+      // reply, and the learner is already looking at a "making your report"
+      // screen, so a longer wait beats a truncated, unparseable response.
+      maxOutputTokens: 2048,
+      attemptTimeoutMs: 15000,
+      overallDeadlineMs: 30000,
+    });
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof GeminiConfigError) {

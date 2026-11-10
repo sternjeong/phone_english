@@ -111,7 +111,13 @@ export function ensureSchema(): Promise<void> {
         )
       `;
       await sql`CREATE INDEX IF NOT EXISTS vocabulary_items_user_id_idx ON vocabulary_items (user_id)`;
-    })();
+    })().catch((err) => {
+      // Don't cache a failure (e.g. a transient connection error on cold
+      // start) — let the next request try again instead of every request
+      // failing until the server instance is recycled.
+      schemaReady = null;
+      throw err;
+    });
   }
   return schemaReady;
 }

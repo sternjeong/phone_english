@@ -51,6 +51,15 @@ async function deleteJSON(url: string): Promise<void> {
   }
 }
 
+/**
+ * YYYY-MM-DD in the browser's local timezone. `toISOString()` is UTC, which
+ * filed any call made before 09:00 KST under the previous day — and the
+ * stats calendar reads keys back in local time.
+ */
+function localDateKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export const storage = {
   getPersona: () => getJSON<Persona | null>("/api/data/persona"),
   setPersona: (p: Persona) => putJSON("/api/data/persona", p),
@@ -65,7 +74,7 @@ export const storage = {
   deleteReport: (id: string) => deleteJSON(`/api/data/reports/${id}`),
 
   getWordStreak: () => getJSON<Record<string, number>>("/api/data/streak"),
-  addWords: (count: number, date = new Date().toISOString().slice(0, 10)) =>
+  addWords: (count: number, date = localDateKey()) =>
     postJSON("/api/data/streak", { words: count, date }),
 
   getVocabulary: () => getJSON<VocabularyItem[]>("/api/data/vocabulary"),

@@ -52,8 +52,12 @@ export default function ReportDetailPage() {
       prosody: report.prosody ?? randomScore(),
       fluency: report.fluency ?? randomScore(),
     };
-    await storage.saveReport(reviewed);
-    setOverride(reviewed);
+    try {
+      await storage.saveReport(reviewed);
+      setOverride(reviewed);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "저장하지 못했어요. 다시 시도해주세요.");
+    }
   }
 
   if (reportState.status === "error") {

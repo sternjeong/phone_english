@@ -1,7 +1,7 @@
 export { auth as proxy } from "@/lib/auth";
 
 /**
- * Gate the whole app behind Google sign-in — this is a personal-use app
+ * Gate the whole app behind the passcode sign-in — this is a personal-use app
  * now that it has per-user history, not a public product. `auth` from
  * NextAuth redirects unauthenticated requests to `pages.signIn` (see
  * src/lib/auth.ts) automatically when used as Proxy (Next.js 16's renamed

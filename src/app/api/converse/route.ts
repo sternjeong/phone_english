@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/apiAuth";
 import { chatJSON, GeminiConfigError } from "@/lib/gemini";
 import { ChatMessage, Persona, Topic } from "@/lib/types";
 
@@ -34,8 +35,39 @@ const TOPIC_LABEL: Record<Topic, string> = {
   emotions: "감정에 대한 질문",
 };
 
+// Bounds a single request so a runaway client (or a pasted wall of text)
+// can't send arbitrarily large prompts to Gemini.
+const MAX_UTTERANCE_CHARS = 2000;
+
+function isValidRequest(body: unknown): body is ConverseRequest {
+  if (!body || typeof body !== "object") return false;
+  const b = body as Partial<ConverseRequest>;
+  return (
+    !!b.persona &&
+    typeof b.persona.name === "string" &&
+    typeof b.persona.personality === "string" &&
+    Array.isArray(b.persona.interests) &&
+    typeof b.topic === "string" &&
+    b.topic in TOPIC_LABEL &&
+    Array.isArray(b.history) &&
+    typeof b.userUtterance === "string" &&
+    b.userUtterance.trim().length > 0 &&
+    b.userUtterance.length <= MAX_UTTERANCE_CHARS &&
+    (b.memory === undefined || Array.isArray(b.memory))
+  );
+}
+
 export async function POST(req: NextRequest) {
-  const { persona, topic, history, userUtterance, memory } = (await req.json()) as ConverseRequest;
+  // The proxy matcher skips /api, so this route must guard itself —
+  // otherwise anyone with the URL could spend the Gemini quota.
+  const userId = await requireUser();
+  if (userId instanceof NextResponse) return userId;
+
+  const body = await req.json().catch(() => null);
+  if (!isValidRequest(body)) {
+    return NextResponse.json({ error: "invalid request" }, { status: 400 });
+  }
+  const { persona, topic, history, userUtterance, memory } = body;
 
   const memorySection =
     memory && memory.length > 0

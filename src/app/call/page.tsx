@@ -87,7 +87,11 @@ export default function CallPage() {
     title: string;
     expressions: Report["expressions"];
     vocabulary: VocabularyItem[];
+    saveFailed: boolean;
   } | null>(null);
+  // endCall can be reached from the hang-up button, the extend prompt and
+  // the timer running out — make sure it only ever runs once per call.
+  const endingRef = useRef(false);
 
   // 기본 통화 시간 5분, "더 통화할까요?" 프롬프트에서 예 누르면 3분씩 연장.
   const [timeLimit, setTimeLimit] = useState(DEFAULT_CALL_SECONDS);
@@ -340,8 +344,12 @@ export default function CallPage() {
 
   // Phase 3: end call, save session + report, show word-count beat, navigate.
   const endCall = async () => {
+    if (endingRef.current) return;
+    endingRef.current = true;
     setPhase("ending");
+    setExtendPromptOpen(false);
     window.speechSynthesis?.cancel();
+    if (listening) void stop();
 
     const session: CallSession = {
       id: newId(),
@@ -351,7 +359,6 @@ export default function CallPage() {
       endedAt: Date.now(),
       messages,
     };
-    storage.saveSession(session);
 
     const wordCount = messages
       .filter((m) => m.role === "user")
@@ -394,8 +401,7 @@ export default function CallPage() {
       expressions,
       memory: memoryFacts,
     };
-    storage.saveReport(report);
-    storage.addWords(wordCount);
+
 
     // Corrections from the learner's actual wording become a personal
     // vocabulary list automatically; no generic AI phrases are mixed in.
@@ -414,11 +420,37 @@ export default function CallPage() {
         reviewed: false,
       }];
     });
-    if (vocabulary.length > 0) storage.saveVocabulary(vocabulary);
 
-    setSummary({ wordCount, reportId: report.id, title, expressions, vocabulary });
+    // Wait for the writes before showing the summary: its "자세한 리포트
+    // 보기" button links straight to this report, which would 404 if
+    // tapped before the save landed.
+    const results = await Promise.allSettled([
+      storage.saveSession(session),
+      storage.saveReport(report),
+      storage.addWords(wordCount),
+      ...(vocabulary.length > 0 ? [storage.saveVocabulary(vocabulary)] : []),
+    ]);
+    const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    failures.forEach((f) => console.error("Failed to save call data:", f.reason));
+
+    setSummary({
+      wordCount,
+      reportId: report.id,
+      title,
+      expressions,
+      vocabulary,
+      saveFailed: failures.length > 0,
+    });
     setPhase("summary");
   };
+
+  // Hang up when the countdown reaches 0 — previously the timer just sat
+  // at 00:00 with the call still running if the extend prompt was ignored.
+  const timeUp = phase === "active" && remainingSeconds === 0;
+  useEffect(() => {
+    if (timeUp) endCall();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeUp]);
 
   if (personaLoading) {
     // Blank placeholder while the persona fetch is in flight — mirrors the
@@ -462,6 +494,11 @@ export default function CallPage() {
               <div className="mt-1 text-sm text-ink-400 line-through">{summary.vocabulary[0].original}</div>
               <div className="mt-1 text-base font-semibold text-ink-100">{summary.vocabulary[0].replacement}</div>
               <div className="mt-1 text-xs text-ink-400">자동으로 내 단어장에 저장했어요.</div>
+            </div>
+          )}
+          {summary.saveFailed && (
+            <div className="text-xs text-coral-400">
+              통화 기록 일부를 저장하지 못했어요. 네트워크 상태를 확인해주세요.
             </div>
           )}
           <button
